@@ -1,4 +1,4 @@
-# SurfHelper
+# SurfHelper 从零开始改善你的上网体验
 
 ss://YWVzLTI1Ni1nY206ZzVNZUQ2RnQzQ1dsSklk@169.197.141.91:5004#ZZ_2271
 ss://YWVzLTI1Ni1nY206ZmFCQW9ENTRrODdVSkc3@38.121.43.71:2375#US_1775
@@ -7,6 +7,8 @@ ss://YWVzLTI1Ni1nY206cEtFVzhKUEJ5VFZUTHRN@38.64.138.145:443#US_1428
 ss://YWVzLTI1Ni1nY206ekROVmVkUkZQUWV4Rzl2@169.197.143.157:6379#ZZ_2607
 ss://YWVzLTI1Ni1nY206ZzVNZUQ2RnQzQ1dsSklk@167.88.63.71:5004#US_2080
 
-从零开始改善你的上网体验
+随缘抓取稳定节点
+失效去群里提醒我
+
 TG频道：https://t.me/SurfHelper_C
 TG群组：https://t.me/SurfHelper_G
