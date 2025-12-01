@@ -21,7 +21,7 @@ COC阵型辅助脚本是一款为 Clash of Clans (部落冲突) 阵型网站设�
 
 ### 安装步骤
 1. 确保已安装 [Tampermonkey](https://www.tampermonkey.net/) 油猴插件
-2. 点击 [🔧 安装脚本](coc-layout-helper.user.js)
+2. 点击 [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/coc-layout-helper.user.js)
 3. 在弹出的页面中点击"安装"
 
 ### 使用方法

@@ -22,9 +22,9 @@ SurfHelper/
 
 | 脚本名称 | 功能描述 | 文档 | 安装 |
 |---------|---------|------|------|
-| **COC阵型辅助** | 绕过付费限制，一键复制阵型链接，支持大图预览和历史记录 | [📖 查看文档](tampermonkey-scripts/coc-layout-helper.md) | [🔧 安装脚本](tampermonkey-scripts/coc-layout-helper.user.js) |
-| **微博磁力链自动补全** | 自动识别并补全微博中的磁力链接 | [📖 查看文档](tampermonkey-scripts/weibo-magnet-linker.md) | [🔧 安装脚本](tampermonkey-scripts/weibo-magnet-linker.user.js) |
-| **视频解析器** | 多平台视频解析，集成多个解析接口 | [📖 查看文档](tampermonkey-scripts/video-parser.md) | [🔧 安装脚本](tampermonkey-scripts/video-parser.user.js) |
+| **COC阵型辅助** | 绕过付费限制，一键复制阵型链接，支持大图预览和历史记录 | [📖 查看文档](tampermonkey-scripts/coc-layout-helper.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/coc-layout-helper.user.js) |
+| **微博磁力链自动补全** | 自动识别并补全微博中的磁力链接 | [📖 查看文档](tampermonkey-scripts/weibo-magnet-linker.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/weibo-magnet-linker.user.js) |
+| **视频解析器** | 多平台视频解析，集成多个解析接口 | [📖 查看文档](tampermonkey-scripts/video-parser.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/video-parser.user.js) |
 
 ## 📞 联系方式
 

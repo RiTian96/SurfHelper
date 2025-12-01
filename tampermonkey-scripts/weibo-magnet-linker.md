@@ -22,7 +22,7 @@ Weibo Magnet Linker 是一款专为微博设计的磁力链接增强工具，能
 
 ### 安装步骤
 1. 确保已安装 [Tampermonkey](https://www.tampermonkey.net/) 油猴插件
-2. 点击 [🔧 安装脚本](weibo-magnet-linker.user.js)
+2. 点击 [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/weibo-magnet-linker.user.js)
 3. 在弹出的页面中点击"安装"
 
 ### 使用方法

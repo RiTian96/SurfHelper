@@ -41,7 +41,7 @@ Video Parser 是一款功能强大的多平台视频解析工具，集成了15+�
 
 ### 安装步骤
 1. 确保已安装 [Tampermonkey](https://www.tampermonkey.net/) 油猴插件
-2. 点击 [🔧 安装脚本](video-parser.user.js)
+2. 点击 [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/video-parser.user.js)
 3. 在弹出的页面中点击"安装"
 
 ### 使用方法
