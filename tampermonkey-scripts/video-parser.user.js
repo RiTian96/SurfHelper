@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Parser - 视频解析器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.0.0
+// @version      1.1.0
 // @description  支持多平台的视频解析工具，集成15+个解析接口（跨域统一配置）
 // @author       RiTian96
 // @match        *://v.qq.com/*
