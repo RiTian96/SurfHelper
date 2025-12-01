@@ -14,6 +14,8 @@
 // @grant        GM_deleteValue
 // @run-at       document-start
 // @license      MIT
+// @updateURL    https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/video-parser.user.js
+// @downloadURL  https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/video-parser.user.js
 // ==/UserScript==
 
 (function() {
