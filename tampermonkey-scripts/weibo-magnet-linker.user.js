@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Weibo Magnet Linker (微博磁力链自动补全)
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.0
+// @version      1.1.0
 // @description  在微博识别 40 位磁力哈希值，自动补全 magnet 头并转换为可点击链接
 // @author       RiTian96
 // @match        *://weibo.com/*
@@ -10,6 +10,8 @@
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=weibo.com
 // @grant        none
 // @license      MIT
+// @updateURL    https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/weibo-magnet-linker.user.js
+// @downloadURL  https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/weibo-magnet-linker.user.js
 // ==/UserScript==
 
 (function() {
