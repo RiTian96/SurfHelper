@@ -554,9 +554,46 @@
             url.includes('v.qq.com/x/cover/') ||
             url.includes('mgtv.com/b/') ||
             (url.includes('bilibili.com/bangumi/play/')) ||
-            (url.includes('bilibili.com/video/')) ||
+            (url.includes('bilibili.com/video/') && isBilibiliPaidContent()) ||
             url.includes('youku.com/v_show/')
         );
+    }
+
+    // 检测B站是否为收费内容
+    function isBilibiliPaidContent() {
+        const url = window.location.href;
+        // 只对番剧、电影、付费课程等内容进行解析
+        // 排除普通视频 (BV号)
+        if (url.includes('bilibili.com/video/BV')) {
+            return false;
+        }
+        // 检查是否为番剧页面
+        if (url.includes('bilibili.com/bangumi/play/')) {
+            return true;
+        }
+        // 检查页面中是否有付费标识
+        const paidIndicators = [
+            '.vip-pay-wrap',
+            '.vip-wrap',
+            '.bilibili-player-vip-wrap',
+            '.vip-limit',
+            '.pay-bar',
+            '.vip-card',
+            '[class*="vip"]',
+            '[class*="pay"]',
+            '[class*="limit"]'
+        ];
+        
+        for (const selector of paidIndicators) {
+            if (document.querySelector(selector)) {
+                return true;
+            }
+        }
+        
+        // 检查页面标题是否包含付费相关关键词
+        const title = document.title.toLowerCase();
+        const paidKeywords = ['付费', '会员', '大会员', 'vip', '限免', '独家'];
+        return paidKeywords.some(keyword => title.includes(keyword));
     }
 
     // 获取当前视频URL
