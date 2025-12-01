@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Parser - 视频解析器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.1.0
+// @version      1.2.0
 // @description  支持多平台的视频解析工具，集成15+个解析接口（跨域统一配置）
 // @author       RiTian96
 // @match        *://v.qq.com/*
@@ -378,7 +378,7 @@
         document.getElementById('auto-parse-toggle').addEventListener('change', async (e) => {
             autoParseEnabled = e.target.checked;
             await saveSettings();
-            if (autoParseEnabled && isVideoPage() && !isParsing) {
+            if (autoParseEnabled && isVideoPage() && shouldAutoParse() && !isParsing) {
                 setTimeout(() => {
                     startAutoParse();
                 }, 1000);
@@ -556,46 +556,24 @@
             url.includes('v.qq.com/x/cover/') ||
             url.includes('mgtv.com/b/') ||
             (url.includes('bilibili.com/bangumi/play/')) ||
-            (url.includes('bilibili.com/video/') && isBilibiliPaidContent()) ||
+            (url.includes('bilibili.com/video/')) || // 普通视频也显示面板，但不自动解析
             url.includes('youku.com/v_show/')
         );
     }
 
-    // 检测B站是否为收费内容
-    function isBilibiliPaidContent() {
+    // 检测是否应该自动解析
+    function shouldAutoParse() {
         const url = window.location.href;
-        // 只对番剧、电影、付费课程等内容进行解析
-        // 排除普通视频 (BV号)
-        if (url.includes('bilibili.com/video/BV')) {
-            return false;
-        }
-        // 检查是否为番剧页面
+        // B站番剧页面自动解析
         if (url.includes('bilibili.com/bangumi/play/')) {
             return true;
         }
-        // 检查页面中是否有付费标识
-        const paidIndicators = [
-            '.vip-pay-wrap',
-            '.vip-wrap',
-            '.bilibili-player-vip-wrap',
-            '.vip-limit',
-            '.pay-bar',
-            '.vip-card',
-            '[class*="vip"]',
-            '[class*="pay"]',
-            '[class*="limit"]'
-        ];
-        
-        for (const selector of paidIndicators) {
-            if (document.querySelector(selector)) {
-                return true;
-            }
+        // B站普通视频不自动解析
+        if (url.includes('bilibili.com/video/')) {
+            return false;
         }
-        
-        // 检查页面标题是否包含付费相关关键词
-        const title = document.title.toLowerCase();
-        const paidKeywords = ['付费', '会员', '大会员', 'vip', '限免', '独家'];
-        return paidKeywords.some(keyword => title.includes(keyword));
+        // 其他平台正常自动解析
+        return true;
     }
 
     // 获取当前视频URL
@@ -801,13 +779,19 @@
         watchUrlChanges();
 
         // 如果是视频页面且开启了自动解析
-        if (isVideoPage() && autoParseEnabled) {
+        if (isVideoPage() && autoParseEnabled && shouldAutoParse()) {
             setTimeout(() => {
                 startAutoParse();
             }, 2000);
         } else if (isVideoPage()) {
+            // 显示不同的提示信息
+            const url = window.location.href;
+            let message = '检测到视频页面，点击"开始解析"即可播放';
+            if (url.includes('bilibili.com/video/')) {
+                message = '检测到B站普通视频，可手动点击"开始解析"（番剧页面会自动解析）';
+            }
             setTimeout(() => {
-                showStatus('检测到视频页面，点击"开始解析"即可播放', 'success');
+                showStatus(message, 'success');
             }, 2000);
         }
     }
