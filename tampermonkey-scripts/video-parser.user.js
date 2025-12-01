@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Parser - 视频解析器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.2.0
+// @version      1.3.0
 // @description  支持多平台的视频解析工具，集成15+个解析接口（跨域统一配置）
 // @author       RiTian96
 // @match        *://v.qq.com/*
@@ -104,6 +104,8 @@
     let parseAttempts = 0;
     let panelCreated = false;
     let apiScores = {};
+    let lastVideoUrl = '';  // 记录上一次的视频URL，用于检测剧集切换
+    let loadingStartTime = 0;  // 记录加载开始时间
 
     // 创建UI（异步）
     async function createUI() {
@@ -200,6 +202,52 @@
                 background: #2196f3;
                 color: white;
                 display: block;
+                position: relative;
+                overflow: hidden;
+            }
+
+            .parser-status.loading::after {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: -100%;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+                animation: loading-shimmer 1.5s infinite;
+            }
+
+            @keyframes loading-shimmer {
+                0% { left: -100%; }
+                100% { left: 100%; }
+            }
+
+            .parser-progress {
+                margin-top: 5px;
+                height: 3px;
+                background: rgba(255,255,255,0.2);
+                border-radius: 2px;
+                overflow: hidden;
+                display: none;
+            }
+
+            .parser-progress-bar {
+                height: 100%;
+                background: #4caf50;
+                border-radius: 2px;
+                width: 0%;
+                transition: width 0.3s ease;
+            }
+
+            .parser-tips {
+                margin-top: 8px;
+                padding: 6px;
+                background: rgba(255,255,255,0.05);
+                border-radius: 4px;
+                font-size: 11px;
+                color: #a0a0b8;
+                text-align: center;
+                border-left: 3px solid #ff6768;
             }
 
             .parser-toggle {
@@ -359,6 +407,10 @@
                 </div>
                 <button class="parser-button" id="parser-button">开始解析</button>
                 <div class="parser-status" id="parser-status"></div>
+                <div class="parser-progress" id="parser-progress">
+                    <div class="parser-progress-bar" id="parser-progress-bar"></div>
+                </div>
+                <div class="parser-tips" id="parser-tips">💡 快捷键：Ctrl+Enter 解析 | Ctrl+Shift+N 切换接口 | Ctrl+Shift+P 显示/隐藏面板</div>
             `;
             document.body.appendChild(panel);
         }
@@ -399,16 +451,70 @@
     }
 
     // 显示状态
-    function showStatus(message, type) {
+    function showStatus(message, type, options = {}) {
         const statusEl = document.getElementById('parser-status');
+        const progressEl = document.getElementById('parser-progress');
+        const progressBarEl = document.getElementById('parser-progress-bar');
+        const tipsEl = document.getElementById('parser-tips');
+        
         if (statusEl) {
             statusEl.textContent = message;
             statusEl.className = `parser-status ${type}`;
-            if (type !== 'success') {
+            
+            // 处理进度条
+            if (type === 'loading') {
+                progressEl.style.display = 'block';
+                if (options.progress !== undefined) {
+                    progressBarEl.style.width = `${options.progress}%`;
+                } else {
+                    // 模拟进度
+                    let progress = 0;
+                    const progressInterval = setInterval(() => {
+                        progress += Math.random() * 15;
+                        if (progress > 90) progress = 90;
+                        progressBarEl.style.width = `${progress}%`;
+                        if (progress >= 90) clearInterval(progressInterval);
+                    }, 300);
+                }
+                
+                // 记录加载开始时间
+                if (!loadingStartTime) {
+                    loadingStartTime = Date.now();
+                }
+                
+                // 更新提示信息
+                if (tipsEl) {
+                    tipsEl.innerHTML = '⏱️ 正在解析中，请稍候...';
+                }
+            } else {
+                progressEl.style.display = 'none';
+                progressBarEl.style.width = '0%';
+                loadingStartTime = 0;
+                
+                // 更新提示信息
+                if (tipsEl) {
+                    if (type === 'success') {
+                        const loadTime = loadingStartTime ? `${((Date.now() - loadingStartTime) / 1000).toFixed(1)}s` : '快速';
+                        tipsEl.innerHTML = `✅ 解析完成！用时 ${loadTime}`;
+                    } else if (type === 'error') {
+                        tipsEl.innerHTML = '❌ 解析失败，请尝试切换接口';
+                    } else {
+                        tipsEl.innerHTML = '💡 提示：按 Ctrl+Enter 快速解析';
+                    }
+                }
+            }
+            
+            // 自动隐藏非成功状态
+            if (type !== 'success' && !options.persistent) {
                 setTimeout(() => {
-                    if (statusEl.textContent === message) {
+                    if (statusEl.textContent === message && statusEl.className.includes(type)) {
                         statusEl.className = 'parser-status';
                         statusEl.textContent = '';
+                        progressEl.style.display = 'none';
+                        progressBarEl.style.width = '0%';
+                        if (tipsEl) {
+                            tipsEl.innerHTML = '💡 提示：按 Ctrl+Enter 快速解析';
+                        }
                     }
                 }, 5000);
             }
@@ -592,7 +698,7 @@
     async function doParse() {
         const videoUrl = getCurrentVideoUrl();
         if (!videoUrl) {
-            showStatus('无法获取视频URL', 'error');
+            showStatus('无法获取视频URL', 'error', { persistent: true });
             return;
         }
 
@@ -600,6 +706,8 @@
         const button = document.getElementById('parser-button');
         button.disabled = true;
         button.textContent = '解析中...';
+        
+        // 立即显示加载状态，提升用户体验
         showStatus(`正在使用 ${apiList[currentApiIndex].label} 解析...`, 'loading');
 
         try {
@@ -609,21 +717,37 @@
             // 清除之前的解析
             clearParse();
 
-            // 注入iframe
-            injectPlayer(parseUrl);
+            // 使用requestAnimationFrame确保UI更新后再执行嵌入
+            requestAnimationFrame(() => {
+                // 注入iframe
+                injectPlayer(parseUrl);
 
-            // 解析成功，增加评分
-            updateApiScore(currentApi, 1);
-            await saveSettings();
+                // 解析成功，增加评分
+                updateApiScore(currentApi, 1);
+                saveSettings();
 
-            showStatus('解析成功！正在播放...', 'success');
+                showStatus('解析成功！正在播放...', 'success');
 
-            // 解析成功后恢复按钮状态
-            isParsing = false;
-            button.disabled = false;
-            button.textContent = '开始解析';
+                // 解析成功后恢复按钮状态
+                isParsing = false;
+                button.disabled = false;
+                button.textContent = '开始解析';
+            });
         } catch (error) {
             console.error('解析失败:', error);
+            
+            // 详细的错误处理
+            let errorMessage = '解析失败';
+            if (error.message.includes('网络')) {
+                errorMessage = '网络连接失败，请检查网络';
+            } else if (error.message.includes('超时')) {
+                errorMessage = '解析超时，请重试';
+            } else if (error.message.includes('不支持')) {
+                errorMessage = '不支持的视频格式';
+            } else {
+                errorMessage = `解析失败: ${error.message}`;
+            }
+            
             if (autoParseEnabled && parseAttempts < apiList.length - 1) {
                 parseAttempts++;
 
@@ -639,10 +763,18 @@
                 updateApiScore(failedApi, -1);
                 saveSettings();
 
-                showStatus(`解析失败，自动切换到 ${apiList[currentApiIndex].label}...`, 'loading');
+                showStatus(`${errorMessage}，自动切换到 ${apiList[currentApiIndex].label}...`, 'loading');
+                
+                // 使用setTimeout避免阻塞UI
                 setTimeout(() => doParse(), 1000);
             } else {
-                showStatus('解析失败: ' + error.message, 'error');
+                showStatus(errorMessage, 'error', { persistent: true });
+                
+                // 显示所有可用接口供用户手动选择
+                const tipsEl = document.getElementById('parser-tips');
+                if (tipsEl) {
+                    tipsEl.innerHTML = `💡 建议手动切换接口或刷新页面重试 (已尝试 ${parseAttempts + 1} 个接口)`;
+                }
             }
         } finally {
             if (!autoParseEnabled || parseAttempts >= apiList.length - 1) {
@@ -754,12 +886,52 @@
     // 监听URL变化（针对SPA应用）
     function watchUrlChanges() {
         let lastUrl = window.location.href;
+        
+        // 检测是否为剧集切换
+        function isEpisodeSwitch(oldUrl, newUrl) {
+            // 爱奇艺剧集切换
+            if (oldUrl.includes('iqiyi.com/v_') && newUrl.includes('iqiyi.com/v_')) {
+                const oldEpisode = oldUrl.match(/(\d+)\.html/)?.[1];
+                const newEpisode = newUrl.match(/(\d+)\.html/)?.[1];
+                return oldEpisode && newEpisode && oldEpisode !== newEpisode;
+            }
+            
+            // 腾讯视频剧集切换
+            if (oldUrl.includes('v.qq.com/x/cover/') && newUrl.includes('v.qq.com/x/cover/')) {
+                const oldEpisode = oldUrl.match(/\/(\d+)\.html/)?.[1];
+                const newEpisode = newUrl.match(/\/(\d+)\.html/)?.[1];
+                return oldEpisode && newEpisode && oldEpisode !== newEpisode;
+            }
+            
+            // 芒果TV剧集切换
+            if (oldUrl.includes('mgtv.com/b/') && newUrl.includes('mgtv.com/b/')) {
+                return oldUrl !== newUrl;
+            }
+            
+            // B站番剧剧集切换
+            if (oldUrl.includes('bilibili.com/bangumi/play/') && newUrl.includes('bilibili.com/bangumi/play/')) {
+                return oldUrl !== newUrl;
+            }
+            
+            return false;
+        }
+        
         setInterval(() => {
             const currentUrl = window.location.href;
             if (currentUrl !== lastUrl) {
+                const wasEpisodeSwitch = isEpisodeSwitch(lastUrl, currentUrl);
                 lastUrl = currentUrl;
+                
                 // URL变化时清除之前的解析
                 clearParse();
+                
+                // 如果是剧集切换且开启了自动解析，自动重新解析
+                if (wasEpisodeSwitch && autoParseEnabled && shouldAutoParse()) {
+                    console.log('检测到剧集切换，自动重新解析:', currentUrl);
+                    setTimeout(() => {
+                        startAutoParse();
+                    }, 1500); // 稍微延迟确保页面加载完成
+                }
             }
         }, 1000);
     }
@@ -796,13 +968,58 @@
         }
     }
 
-    // 添加键盘快捷键（Ctrl+Shift+P）
+    // 添加键盘快捷键
     document.addEventListener('keydown', (e) => {
+        // Ctrl+Shift+P: 切换面板显示/隐藏
         if (e.ctrlKey && e.shiftKey && e.key === 'P') {
             e.preventDefault();
             const panel = document.querySelector('.video-parser-panel');
             if (panel) {
                 panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+            }
+        }
+        
+        // Ctrl+Enter: 快速解析
+        if (e.ctrlKey && e.key === 'Enter') {
+            e.preventDefault();
+            if (isVideoPage() && !isParsing) {
+                const button = document.getElementById('parser-button');
+                if (button && !button.disabled) {
+                    // 添加视觉反馈
+                    button.style.transform = 'scale(0.95)';
+                    setTimeout(() => {
+                        button.style.transform = 'scale(1)';
+                    }, 100);
+                    
+                    startParse();
+                }
+            }
+        }
+        
+        // Ctrl+Shift+N: 切换到下一个接口
+        if (e.ctrlKey && e.shiftKey && e.key === 'N') {
+            e.preventDefault();
+            const nextBtn = document.getElementById('next-api-btn');
+            if (nextBtn && !nextBtn.disabled) {
+                nextBtn.click();
+            }
+        }
+        
+        // Ctrl+Shift+L: 点赞当前接口
+        if (e.ctrlKey && e.shiftKey && e.key === 'L') {
+            e.preventDefault();
+            const likeBtn = document.getElementById('like-btn');
+            if (likeBtn && !likeBtn.disabled) {
+                likeBtn.click();
+            }
+        }
+        
+        // Ctrl+Shift+D: 点踩当前接口
+        if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+            e.preventDefault();
+            const dislikeBtn = document.getElementById('dislike-btn');
+            if (dislikeBtn && !dislikeBtn.disabled) {
+                dislikeBtn.click();
             }
         }
     });
