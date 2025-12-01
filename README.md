@@ -9,12 +9,12 @@
 ```
 SurfHelper/
 ├── tampermonkey-scripts/          # 油猴脚本文件夹
-│   ├── coc-layout-helper.user.js  # COC阵型辅助脚本 (v1.1.0)
-│   ├── weibo-magnet-linker.user.js # 微博磁力链自动补全 (v1.1.0)
-│   ├── video-parser.user.js       # 视频解析器 (v1.3.0)
 │   ├── coc-layout-helper.md       # COC阵型辅助说明文档
+│   ├── coc-layout-helper.user.js  # COC阵型辅助脚本 (v1.1.0)
+│   ├── video-parser.md            # 视频解析器说明文档
+│   ├── video-parser.user.js       # 视频解析器 (v1.3.0)
 │   ├── weibo-magnet-linker.md     # 微博磁力链说明文档
-│   └── video-parser.md            # 视频解析器说明文档
+│   └── weibo-magnet-linker.user.js # 微博磁力链自动补全 (v1.1.0)
 └── README.md                       # 项目说明文档
 ```
 
