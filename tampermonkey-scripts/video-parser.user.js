@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video Parser - 视频解析器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.3.0
+// @version      1.4.0
 // @description  支持多平台的视频解析工具，集成15+个解析接口（跨域统一配置）
 // @author       RiTian96
 // @match        *://v.qq.com/*
@@ -122,8 +122,52 @@
                 padding: 15px;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.3);
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                min-width: 250px;
+                width: 280px;
+                max-width: 280px;
                 border: 1px solid #3a3d5b;
+                box-sizing: border-box;
+            }
+
+            .video-parser-panel.minimized {
+                width: 50px;
+                height: 50px;
+                padding: 0;
+                min-width: 50px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+            }
+
+            .video-parser-panel.minimized .panel-content {
+                display: none;
+            }
+
+            .video-parser-panel.minimized .close-button {
+                position: absolute;
+                top: -5px;
+                right: -5px;
+                width: 20px;
+                height: 20px;
+                background: #f44336;
+                border-radius: 50%;
+                color: white;
+                font-size: 12px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10;
+            }
+
+            .video-parser-panel.minimized .parser-icon {
+                display: block;
+                font-size: 24px;
+                color: #ff6768;
+            }
+
+            .video-parser-panel:not(.minimized) .parser-icon {
+                display: none;
             }
 
             .video-parser-panel * {
@@ -184,6 +228,10 @@
                 font-size: 12px;
                 text-align: center;
                 display: none;
+                width: 100%;
+                min-height: 36px;
+                word-wrap: break-word;
+                overflow-wrap: break-word;
             }
 
             .parser-status.success {
@@ -389,30 +437,51 @@
         if (!panel) {
             // 创建面板
             panel = document.createElement('div');
-            panel.className = 'video-parser-panel';
+            panel.className = 'video-parser-panel minimized';
             panel.innerHTML = `
-                <button class="close-button" onclick="this.parentElement.style.display='none'">&times;</button>
-                <div class="parser-header">🎬 视频解析器</div>
-                <div class="parser-toggle">
-                    <input type="checkbox" id="auto-parse-toggle">
-                    <label for="auto-parse-toggle">自动解析</label>
-                </div>
-                <select class="parser-select" id="parser-api-select">
-                    ${sortedApiList.map(api => `<option value="${api.value}" data-label="${api.label}">${api.label} (${getApiScore(api.value)})</option>`).join('')}
-                </select>
-                <div class="parser-actions">
-                    <button class="parser-action-btn next-btn" id="next-api-btn">下一个</button>
-                    <button class="parser-action-btn" id="like-btn">👍</button>
-                    <button class="parser-action-btn" id="dislike-btn">👎</button>
-                </div>
-                <button class="parser-button" id="parser-button">开始解析</button>
-                <div class="parser-status" id="parser-status"></div>
+                <div class="parser-icon">🎬</div>
+                <button class="close-button" onclick="this.parentElement.remove()">&times;</button>
+                <div class="panel-content">
+                    <div class="parser-header">视频解析器</div>
+                    <div class="parser-toggle">
+                        <input type="checkbox" id="auto-parse-toggle">
+                        <label for="auto-parse-toggle">自动解析</label>
+                    </div>
+                    <select class="parser-select" id="parser-api-select">
+                        ${sortedApiList.map(api => `<option value="${api.value}" data-label="${api.label}">${api.label} (${getApiScore(api.value)})</option>`).join('')}
+                    </select>
+                    <div class="parser-actions">
+                        <button class="parser-action-btn next-btn" id="next-api-btn">下一个</button>
+                        <button class="parser-action-btn" id="like-btn">👍</button>
+                        <button class="parser-action-btn" id="dislike-btn">👎</button>
+                    </div>
+                    <button class="parser-button" id="parser-button">开始解析</button>
+                    <div class="parser-status" id="parser-status"></div>
                 <div class="parser-progress" id="parser-progress">
                     <div class="parser-progress-bar" id="parser-progress-bar"></div>
                 </div>
-                <div class="parser-tips" id="parser-tips">💡 快捷键：Ctrl+Enter 解析 | Ctrl+Shift+N 切换接口 | Ctrl+Shift+P 显示/隐藏面板</div>
+                </div>
             `;
             document.body.appendChild(panel);
+
+            // 添加点击小图标展开/收起的交互
+            panel.addEventListener('click', function(e) {
+                // 如果点击的是关闭按钮，不处理
+                if (e.target.classList.contains('close-button')) {
+                    return;
+                }
+                
+                // 如果面板已最小化，则展开
+                if (panel.classList.contains('minimized')) {
+                    panel.classList.remove('minimized');
+                }
+                // 如果点击的是面板内容区域且不是输入元素，则最小化
+                else if (!e.target.closest('.panel-content') || 
+                         (e.target.closest('.panel-content') && 
+                          !['INPUT', 'SELECT', 'BUTTON', 'OPTION'].includes(e.target.tagName))) {
+                    panel.classList.add('minimized');
+                }
+            });
         }
 
         // 加载保存的设置
@@ -455,7 +524,6 @@
         const statusEl = document.getElementById('parser-status');
         const progressEl = document.getElementById('parser-progress');
         const progressBarEl = document.getElementById('parser-progress-bar');
-        const tipsEl = document.getElementById('parser-tips');
         
         if (statusEl) {
             statusEl.textContent = message;
@@ -481,42 +549,10 @@
                 if (!loadingStartTime) {
                     loadingStartTime = Date.now();
                 }
-                
-                // 更新提示信息
-                if (tipsEl) {
-                    tipsEl.innerHTML = '⏱️ 正在解析中，请稍候...';
-                }
             } else {
                 progressEl.style.display = 'none';
                 progressBarEl.style.width = '0%';
                 loadingStartTime = 0;
-                
-                // 更新提示信息
-                if (tipsEl) {
-                    if (type === 'success') {
-                        const loadTime = loadingStartTime ? `${((Date.now() - loadingStartTime) / 1000).toFixed(1)}s` : '快速';
-                        tipsEl.innerHTML = `✅ 解析完成！用时 ${loadTime}`;
-                    } else if (type === 'error') {
-                        tipsEl.innerHTML = '❌ 解析失败，请尝试切换接口';
-                    } else {
-                        tipsEl.innerHTML = '💡 提示：按 Ctrl+Enter 快速解析';
-                    }
-                }
-            }
-            
-            // 自动隐藏非成功状态
-            if (type !== 'success' && !options.persistent) {
-                setTimeout(() => {
-                    if (statusEl.textContent === message && statusEl.className.includes(type)) {
-                        statusEl.className = 'parser-status';
-                        statusEl.textContent = '';
-                        progressEl.style.display = 'none';
-                        progressBarEl.style.width = '0%';
-                        if (tipsEl) {
-                            tipsEl.innerHTML = '💡 提示：按 Ctrl+Enter 快速解析';
-                        }
-                    }
-                }, 5000);
             }
         }
     }
@@ -768,13 +804,7 @@
                 // 使用setTimeout避免阻塞UI
                 setTimeout(() => doParse(), 1000);
             } else {
-                showStatus(errorMessage, 'error', { persistent: true });
-                
-                // 显示所有可用接口供用户手动选择
-                const tipsEl = document.getElementById('parser-tips');
-                if (tipsEl) {
-                    tipsEl.innerHTML = `💡 建议手动切换接口或刷新页面重试 (已尝试 ${parseAttempts + 1} 个接口)`;
-                }
+                showStatus(`${errorMessage} (已尝试 ${parseAttempts + 1} 个接口)`, 'error', { persistent: true });
             }
         } finally {
             if (!autoParseEnabled || parseAttempts >= apiList.length - 1) {
@@ -963,65 +993,15 @@
                 message = '检测到B站普通视频，可手动点击"开始解析"（番剧页面会自动解析）';
             }
             setTimeout(() => {
-                showStatus(message, 'success');
+                // 只在没有解析状态时显示提示
+                const statusEl = document.getElementById('parser-status');
+                if (statusEl && !statusEl.textContent) {
+                    showStatus(message, 'success');
+                }
             }, 2000);
         }
     }
 
-    // 添加键盘快捷键
-    document.addEventListener('keydown', (e) => {
-        // Ctrl+Shift+P: 切换面板显示/隐藏
-        if (e.ctrlKey && e.shiftKey && e.key === 'P') {
-            e.preventDefault();
-            const panel = document.querySelector('.video-parser-panel');
-            if (panel) {
-                panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-            }
-        }
-        
-        // Ctrl+Enter: 快速解析
-        if (e.ctrlKey && e.key === 'Enter') {
-            e.preventDefault();
-            if (isVideoPage() && !isParsing) {
-                const button = document.getElementById('parser-button');
-                if (button && !button.disabled) {
-                    // 添加视觉反馈
-                    button.style.transform = 'scale(0.95)';
-                    setTimeout(() => {
-                        button.style.transform = 'scale(1)';
-                    }, 100);
-                    
-                    startParse();
-                }
-            }
-        }
-        
-        // Ctrl+Shift+N: 切换到下一个接口
-        if (e.ctrlKey && e.shiftKey && e.key === 'N') {
-            e.preventDefault();
-            const nextBtn = document.getElementById('next-api-btn');
-            if (nextBtn && !nextBtn.disabled) {
-                nextBtn.click();
-            }
-        }
-        
-        // Ctrl+Shift+L: 点赞当前接口
-        if (e.ctrlKey && e.shiftKey && e.key === 'L') {
-            e.preventDefault();
-            const likeBtn = document.getElementById('like-btn');
-            if (likeBtn && !likeBtn.disabled) {
-                likeBtn.click();
-            }
-        }
-        
-        // Ctrl+Shift+D: 点踩当前接口
-        if (e.ctrlKey && e.shiftKey && e.key === 'D') {
-            e.preventDefault();
-            const dislikeBtn = document.getElementById('dislike-btn');
-            if (dislikeBtn && !dislikeBtn.disabled) {
-                dislikeBtn.click();
-            }
-        }
-    });
+    
 
 })();

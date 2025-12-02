@@ -1,0 +1,126 @@
+# SurfHelper 项目上下文
+
+## 项目概述
+
+SurfHelper 是一个专注于提升网页浏览体验的个人工具集项目，主要包含多个 Tampermonkey 油猴脚本。该项目于 2025 年 12 月 2 日创建，采用 MIT 许可证，托管在 GitHub 上。
+
+## 项目结构
+
+```
+SurfHelper/
+├── tampermonkey-scripts/          # 油猴脚本文件夹
+│   ├── coc-layout-helper.md       # COC阵型辅助说明文档
+│   ├── coc-layout-helper.user.js  # COC阵型辅助脚本 (v1.1.0)
+│   ├── video-parser.md            # 视频解析器说明文档
+│   ├── video-parser.user.js       # 视频解析器 (v1.3.0)
+│   ├── weibo-magnet-linker.md     # 微博磁力链说明文档
+│   └── weibo-magnet-linker.user.js # 微博磁力链自动补全 (v1.1.0)
+├── README.md                       # 项目说明文档
+└── IFLOW.md                        # 本文件，项目上下文
+```
+
+## 核心组件
+
+### 1. Video Parser - 视频解析器 (v1.3.0)
+- **文件**: `tampermonkey-scripts/video-parser.user.js`
+- **功能**: 多平台视频解析工具，集成 15+ 解析接口
+- **支持平台**: 腾讯视频、爱奇艺、优酷、B站、芒果TV
+- **特色功能**: 
+  - 键盘快捷键支持 (Ctrl+Enter 快速解析)
+  - 剧集自动切换检测
+  - B站智能过滤（番剧自动解析，普通视频仅手动解析）
+  - 跨域统一配置
+- **运行时机**: document-start
+- **权限**: GM_setValue, GM_getValue, GM_deleteValue
+
+### 2. COC 阵型辅助 (v1.1.0)
+- **文件**: `tampermonkey-scripts/coc-layout-helper.user.js`
+- **功能**: Clash of Clans 阵型网站增强工具
+- **核心特性**:
+  - 绕过付费/次数限制，后台无感提取阵型链接
+  - 鼠标悬停显示高清巨型大图（自适应尺寸，智能避让）
+  - 左侧悬浮背包记录历史阵型（最多50条）
+  - 二维码扫码直连支持
+- **运行时机**: document-start
+- **权限**: GM_addStyle, GM_setClipboard
+- **配置**: 可开启调试模式，自定义历史记录数量
+
+### 3. Weibo Magnet Linker (v1.1.0)
+- **文件**: `tampermonkey-scripts/weibo-magnet-linker.user.js`
+- **功能**: 微博磁力链接自动补全工具
+- **核心特性**:
+  - 智能识别 40 位磁力哈希值
+  - 自动补全 magnet 前缀
+  - 安全过滤机制（避免在链接、代码等元素中误匹配）
+- **支持网站**: weibo.com, s.weibo.com, d.weibo.com
+- **运行时机**: 未明确指定（默认 document-end）
+- **权限**: 无特殊权限要求
+
+## 开发约定
+
+### 代码风格
+- 使用严格模式 (`'use strict'`)
+- 采用现代 JavaScript (ES6+) 语法
+- 代码结构清晰，分段注释明确
+- 功能模块化，配置与逻辑分离
+
+### 脚本元数据
+所有脚本都包含完整的 Tampermonkey 元数据：
+- @name: 脚本名称
+- @namespace: GitHub 项目地址
+- @version: 语义化版本号
+- @description: 功能描述
+- @author: RiTian96
+- @match: 目标网站匹配规则
+- @grant: 所需权限
+- @license: MIT
+- @updateURL/@downloadURL: 自动更新支持
+
+### 版本管理
+- 采用语义化版本控制 (Major.Minor.Patch)
+- 每个脚本都有对应的 Markdown 文档
+- 文档中包含详细的更新日志
+
+## 项目维护
+
+### 更新机制
+- 所有脚本都配置了自动更新 URL
+- 使用 GitHub Raw 作为更新源
+- 支持油猴插件的自动更新功能
+
+### 联系方式
+- TG频道: https://t.me/SurfHelper_C
+- TG群组: https://t.me/SurfHelper_G
+
+### 许可证
+- 项目采用 MIT 许可证
+- 可自由使用、修改和分发
+
+## 技术特点
+
+### 安全性
+- 所有脚本仅在前端运行，不收集用户数据
+- 采用安全过滤机制，避免误操作
+- 代码开源，透明可审计
+
+### 性能优化
+- 智能DOM遍历，减少页面性能影响
+- 实时监听页面变化，动态处理新内容
+- 避免在iframe中重复运行
+
+### 兼容性
+- 支持现代浏览器
+- 适配各种屏幕尺寸
+- 跨平台兼容
+
+## 使用场景
+
+该项目适用于：
+- 视频网站VIP内容解析
+- 游戏阵型分享和浏览
+- 社交媒体资源分享
+- 网页浏览体验增强
+
+## 未来扩展
+
+项目架构支持轻松添加新的油猴脚本，保持统一的代码风格和文档结构。

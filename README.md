@@ -12,7 +12,7 @@ SurfHelper/
 │   ├── coc-layout-helper.md       # COC阵型辅助说明文档
 │   ├── coc-layout-helper.user.js  # COC阵型辅助脚本 (v1.1.0)
 │   ├── video-parser.md            # 视频解析器说明文档
-│   ├── video-parser.user.js       # 视频解析器 (v1.3.0)
+│   ├── video-parser.user.js       # 视频解析器 (v1.4.0)
 │   ├── weibo-magnet-linker.md     # 微博磁力链说明文档
 │   └── weibo-magnet-linker.user.js # 微博磁力链自动补全 (v1.1.0)
 └── README.md                       # 项目说明文档
@@ -24,13 +24,13 @@ SurfHelper/
 |---------|------|---------|------|------|
 | **COC阵型辅助** | v1.1.0 | 绕过付费限制，一键复制阵型链接，支持大图预览和历史记录 | [📖 查看文档](tampermonkey-scripts/coc-layout-helper.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/coc-layout-helper.user.js) |
 | **微博磁力链自动补全** | v1.1.0 | 自动识别并补全微博中的磁力链接 | [📖 查看文档](tampermonkey-scripts/weibo-magnet-linker.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/weibo-magnet-linker.user.js) |
-| **视频解析器** | v1.3.0 | 多平台视频解析，集成15+解析接口，支持键盘快捷键和智能剧集切换 | [📖 查看文档](tampermonkey-scripts/video-parser.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/video-parser.user.js) |
+| **视频解析器** | v1.4.0 | 多平台视频解析，集成15+解析接口，极简界面设计，小图标模式不遮挡视频 | [📖 查看文档](tampermonkey-scripts/video-parser.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/video-parser.user.js) |
 
 ## ✨ 特色功能
 
-### 🎬 视频解析器 (v1.3.0)
+### 🎬 视频解析器 (v1.4.0)
 - **智能解析** - 支持腾讯视频、爱奇艺、优酷、B站、芒果TV等主流平台
-- **键盘快捷键** - Ctrl+Enter快速解析，Ctrl+Shift+P显示/隐藏面板
+- **极简界面** - 小图标模式，不遮挡视频内容，点击展开完整面板
 - **剧集自动切换** - 检测剧集切换自动重新解析
 - **B站智能过滤** - 番剧自动解析，普通视频仅手动解析
 - **增强视觉反馈** - 加载动画、进度条、实时状态提示
