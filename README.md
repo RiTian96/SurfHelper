@@ -12,7 +12,7 @@ SurfHelper/
 │   ├── coc-layout-helper.md       # COC阵型复制助手说明文档
 │   ├── coc-layout-helper.user.js  # COC阵型复制助手 (v1.1.1)
 │   ├── javdb-manager.md           # JavDB影片管理器说明文档
-│   ├── javdb-manager.user.js      # JavDB影片管理器 (v1.0.0)
+│   ├── javdb-manager.user.js      # JavDB影片管理器 (v1.1.0)
 │   ├── video-parser.md            # VIP视频解析器说明文档
 │   ├── video-parser.user.js       # VIP视频解析器 (v1.4.1)
 │   ├── weibo-magnet-linker.md     # 微博磁链补全助手说明文档
@@ -25,7 +25,7 @@ SurfHelper/
 | 脚本名称 | 版本 | 功能描述 | 文档 | 安装 |
 |---------|------|---------|------|------|
 | **COC阵型复制助手** | v1.1.1 | 绕过付费限制，一键复制阵型链接，支持大图预览和历史记录 | [📖 查看文档](tampermonkey-scripts/coc-layout-helper.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/coc-layout-helper.user.js) |
-| **JavDB影片管理器** | v1.0.0 | 智能屏蔽已看/想看影片，低分过滤，高分高亮，批量导入管理 | [📖 查看文档](tampermonkey-scripts/javdb-manager.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/javdb-manager.user.js) |
+| **JavDB影片管理器** | v1.1.0 | 智能屏蔽已看/想看影片，低分过滤，高分高亮，批量导入管理 | [📖 查看文档](tampermonkey-scripts/javdb-manager.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/javdb-manager.user.js) |
 | **微博磁链补全助手** | v1.1.0 | 自动识别并补全微博中的磁力链接 | [📖 查看文档](tampermonkey-scripts/weibo-magnet-linker.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/weibo-magnet-linker.user.js) |
 | **VIP视频解析器** | v1.4.1 | 多平台视频解析，集成16+解析接口，极简界面设计，小图标模式不遮挡视频 | [📖 查看文档](tampermonkey-scripts/video-parser.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/video-parser.user.js) |
 
@@ -38,11 +38,11 @@ SurfHelper/
 - **B站智能过滤** - 番剧自动解析，普通视频仅手动解析
 - **增强视觉反馈** - 加载动画、进度条、实时状态提示
 
-### 🎬 JavDB影片管理器 (v1.0.0)
+### 🎬 JavDB影片管理器 (v1.1.0)
 - **智能屏蔽** - 自动识别已看/想看影片并降低透明度
 - **低分过滤** - 智能屏蔽3.5分以下且评价人数超过5人的影片
 - **高分高亮** - 4.5分以上显示"必看"，4.0分以上显示"推荐"
-- **批量导入** - 支持翻页自动导入已看/想看列表
+- **批量导入** - URL翻页导入，智能停止机制，去重处理
 - **可视化管理** - 右上角悬浮窗，支持搜索和快速操作
 
 ### 🏰 COC阵型复制助手 (v1.1.1)

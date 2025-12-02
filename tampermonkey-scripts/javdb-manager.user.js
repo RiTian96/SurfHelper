@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.0.0
+// @version      1.1.0
 // @description  [核心] 已看/想看影片自动屏蔽，低分智能过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理
 // @author       RiTian96
 // @match        https://javdb.com/*
@@ -25,9 +25,7 @@
         isImporting: false,
         importedCount: 0,
         totalCount: 0,
-        lastActivityTime: 0, // 最后活动时间
-        inactivityTimer: null, // 非活动定时器
-        INACTIVITY_TIMEOUT: 10000, // 10秒无新数据则停止
+        
         DEBUG: false, // 生产环境设为false，调试时设为true
         panelCreated: false, // 防止重复创建面板
         
@@ -179,10 +177,6 @@
                     CONFIG.isImporting = true;
                     CONFIG.importedCount = importedCount ? parseInt(importedCount) : 0;
                     CONFIG.currentPageType = importType;
-                    
-                    // 启动非活动检测
-                    startInactivityTimer();
-                    updateActivity();
                     
                     // 更新UI
                     updateGlobalCount();
@@ -1415,13 +1409,13 @@
         // 如果当前不在对应页面，先跳转并记录待导入状态
         if (type === 'watched' && !window.location.href.includes('watched_videos')) {
             localStorage.setItem('javdb_pending_import', 'watched');
-            window.location.href = 'https://javdb.com/users/watched_videos';
+            window.location.href = 'https://javdb.com/users/watched_videos?page=1';
             return;
         }
         // 如果当前不在对应页面，先跳转并记录待导入状态
         if (type === 'wanted' && !window.location.href.includes('want_watch_videos')) {
             localStorage.setItem('javdb_pending_import', 'wanted');
-            window.location.href = 'https://javdb.com/users/want_watch_videos';
+            window.location.href = 'https://javdb.com/users/want_watch_videos?page=1';
             return;
         }
         
@@ -1435,10 +1429,6 @@
         CONFIG.importedCount = 0;
         CONFIG.totalCount = 0;
         CONFIG.currentPageType = type;
-        CONFIG.lastActivityTime = Date.now();
-
-        // 启动非活动检测
-        startInactivityTimer();
 
         // 更新UI
         updateGlobalCount();
@@ -1453,9 +1443,6 @@
         
         // 保存当前页面的番号
         saveCurrentPageCodes();
-        
-        // 清除非活动定时器
-        clearInactivityTimer();
         
         // 立即清除localStorage状态
         localStorage.removeItem('javdb_pending_import');
@@ -1514,78 +1501,7 @@
         }
     }
 
-    // 启动非活动检测定时器
-    function startInactivityTimer() {
-        clearInactivityTimer(); // 清除之前的定时器
-        
-        CONFIG.inactivityTimer = setTimeout(() => {
-            if (CONFIG.isImporting && localStorage.getItem('javdb_importing') === 'true') {
-                debugLog('检测到长时间无新数据，自动停止导入');
-                showTimeoutMessage();
-                completeImport();
-            }
-        }, CONFIG.INACTIVITY_TIMEOUT);
-    }
-
-    // 清除非活动定时器
-    function clearInactivityTimer() {
-        if (CONFIG.inactivityTimer) {
-            clearTimeout(CONFIG.inactivityTimer);
-            CONFIG.inactivityTimer = null;
-        }
-    }
-
-    // 更新活动时间并重启定时器
-    function updateActivity() {
-        CONFIG.lastActivityTime = Date.now();
-        if (CONFIG.isImporting) {
-            startInactivityTimer();
-        }
-    }
-
-    // 显示超时停止消息
-    function showTimeoutMessage() {
-        // 移除已存在的提示
-        const existingMsg = document.getElementById('javdb-timeout-message');
-        if (existingMsg) {
-            existingMsg.remove();
-        }
-        
-        // 使用公共函数重建悬浮窗
-        forceRecreateFloatingWindow();
-        
-        const timeoutDiv = document.createElement('div');
-        timeoutDiv.id = 'javdb-timeout-message';
-        timeoutDiv.style.cssText = `
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(241, 196, 15, 0.95);
-            color: white;
-            padding: 15px 25px;
-            border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            z-index: 10002;
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-            text-align: center;
-            backdrop-filter: blur(10px);
-        `;
-        timeoutDiv.innerHTML = `
-            <div style="font-size: 16px; font-weight: bold; margin-bottom: 5px;">导入超时</div>
-            <div>10秒内无新数据，已自动停止</div>
-        `;
-        
-        document.body.appendChild(timeoutDiv);
-        
-        // 3秒后自动移除
-        setTimeout(() => {
-            if (timeoutDiv.parentNode) {
-                timeoutDiv.parentNode.removeChild(timeoutDiv);
-            }
-        }, 3000);
-    }
+    
 
     // 强制重建悬浮窗的公共函数
     function forceRecreateFloatingWindow() {
@@ -1602,9 +1518,6 @@
     // 完成导入的统一函数
     function completeImport() {
         debugLog('开始完成导入流程');
-        
-        // 清除非活动定时器
-        clearInactivityTimer();
         
         // 清除所有localStorage状态
         localStorage.removeItem('javdb_pending_import');
@@ -1696,10 +1609,9 @@
         // 保存番号
         saveCodes(pageCodes);
 
-        // 更新计数和活动时间
+        // 更新计数
         if (pageCodes.length > 0) {
             localStorage.setItem('javdb_imported_count', CONFIG.importedCount.toString());
-            updateActivity(); // 有新数据时更新活动时间
         }
         
         updateGlobalCount();
@@ -1718,7 +1630,16 @@
     // 保存番号
     function saveCodes(newCodes) {
         const storageKey = CONFIG.currentPageType === 'watched' ? CONFIG.watchedStorageKey : CONFIG.wantedStorageKey;
+        const oppositeKey = CONFIG.currentPageType === 'watched' ? CONFIG.wantedStorageKey : CONFIG.watchedStorageKey;
         const existingCodes = GM_getValue(storageKey, []);
+        const oppositeCodes = GM_getValue(oppositeKey, []);
+        
+        // 从对面列表中移除当前导入的番号
+        const newOppositeCodes = oppositeCodes.filter(code => !newCodes.includes(code));
+        if (newOppositeCodes.length !== oppositeCodes.length) {
+            GM_setValue(oppositeKey, newOppositeCodes);
+            debugLog(`从对面列表移除了 ${oppositeCodes.length - newOppositeCodes.length} 个重复番号`);
+        }
         
         // 合并并去重
         const allCodes = [...new Set([...existingCodes, ...newCodes])];
@@ -1726,7 +1647,7 @@
         // 保存
         GM_setValue(storageKey, allCodes);
         
-        // 计算新增数量
+        // 计算新增数量（不包括从对面列表移除的）
         const newCount = allCodes.length - existingCodes.length;
         
         // 更新内存计数
@@ -1764,23 +1685,30 @@
 
         debugLog('检查是否有下一页...');
         
-        // 查找下一页链接 - 尝试多种选择器
-        let nextLink = document.querySelector('.pagination .pagination-next:not(.disabled)');
-        if (!nextLink) {
-            nextLink = document.querySelector('.pagination a[rel="next"]');
-        }
-        if (!nextLink) {
-            nextLink = document.querySelector('a[href*="page"]:not(.disabled)');
-        }
-        
         // 检查是否还有更多内容的方法
         const hasMoreContent = checkHasMoreContent();
         
-        debugLog('下一页链接:', nextLink ? nextLink.href : '未找到');
         debugLog('是否有更多内容:', hasMoreContent);
         
-        if (nextLink && hasMoreContent) {
-            debugLog('找到下一页链接，准备跳转:', nextLink.href);
+        if (hasMoreContent) {
+            // 获取当前页码并构造下一页URL
+            const currentUrl = window.location.href;
+            let nextPageUrl;
+            
+            // 尝试从URL中提取页码
+            const pageMatch = currentUrl.match(/[?&]page=(\d+)/);
+            if (pageMatch) {
+                const currentPage = parseInt(pageMatch[1]);
+                const nextPage = currentPage + 1;
+                nextPageUrl = currentUrl.replace(/([?&]page=)\d+/, `$1${nextPage}`);
+                debugLog(`从第${currentPage}页跳转到第${nextPage}页`);
+            } else {
+                // 如果URL中没有页码参数，添加第1页
+                nextPageUrl = currentUrl + (currentUrl.includes('?') ? '&' : '?') + 'page=1';
+                debugLog('URL中没有页码参数，跳转到第1页');
+            }
+            
+            debugLog('准备跳转到下一页:', nextPageUrl);
             
             // 最后一次状态检查
             if (localStorage.getItem('javdb_importing') !== 'true') {
@@ -1793,17 +1721,17 @@
             localStorage.setItem('javdb_imported_count', CONFIG.importedCount.toString());
             localStorage.setItem('javdb_import_type', CONFIG.currentPageType);
             
-            debugLog('已保存导入状态，准备点击下一页');
+            debugLog('已保存导入状态，准备跳转到下一页');
             
-            // 点击下一页 - 这里是模拟点击网页上的下一页按钮
-            nextLink.click();
+            // 直接跳转到下一页URL
+            window.location.href = nextPageUrl;
             
-            debugLog('已点击下一页链接');
+            debugLog('已跳转到下一页');
             
             // 页面跳转后，init函数会检查并继续导入
         } else {
             // 没有下一页了，完成导入
-            debugLog('没有找到下一页链接或没有更多内容，导入完成');
+            debugLog('没有更多内容，导入完成');
             
             // 彻底清除状态
             completeImport();
@@ -1819,50 +1747,14 @@
             return false;
         }
         
-        // 检查是否有禁用的下一页按钮
-        const disabledNext = document.querySelector('.pagination .pagination-next.disabled');
-        if (disabledNext) {
-            debugLog('发现禁用的下一页按钮，应该停止');
+        // 检查页面文本内容是否包含"暫無內容"
+        const bodyText = document.body.textContent || document.body.innerText || '';
+        if (/暫無內容/.test(bodyText)) {
+            debugLog('页面显示"暫無內容"，应该停止');
             return false;
         }
         
-        // 检查分页信息
-        const paginationInfo = document.querySelector('.pagination-info');
-        if (paginationInfo) {
-            const text = paginationInfo.textContent;
-            debugLog('分页信息:', text);
-            
-            // 尝试解析分页信息，如 "显示 1-20 共 100 条"
-            const match = text.match(/显示\s+\d+-\d+\s+共\s+(\d+)\s+条/);
-            if (match) {
-                const total = parseInt(match[1]);
-                const currentPageMatch = text.match(/第\s+(\d+)\s+页/);
-                const currentPage = currentPageMatch ? parseInt(currentPageMatch[1]) : 1;
-                const itemsPerPage = items.length;
-                const maxPage = Math.ceil(total / itemsPerPage);
-                
-                debugLog(`总数量: ${total}, 当前页: ${currentPage}, 每页: ${itemsPerPage}, 最大页: ${maxPage}`);
-                
-                const hasMore = currentPage < maxPage;
-                debugLog(`是否还有更多页面: ${hasMore}`);
-                return hasMore;
-            }
-        }
-        
-        // 检查URL中的页码参数
-        const urlMatch = window.location.href.match(/[?&]page=(\d+)/);
-        if (urlMatch) {
-            const currentPage = parseInt(urlMatch[1]);
-            debugLog(`从URL检测到当前页码: ${currentPage}`);
-            
-            // 如果是第1页且没有分页信息，可能只有一页
-            if (currentPage === 1 && !paginationInfo) {
-                debugLog('第1页且无分页信息，可能只有一页');
-                return false;
-            }
-        }
-        
-        return true; // 默认认为还有更多内容
+        return true; // 有番号且没有"暫無內容"则继续
     }
 
     // 显示完成消息
@@ -2174,7 +2066,6 @@
 
     // 清理函数，在页面卸载时调用
     window.addEventListener('beforeunload', () => {
-        clearInactivityTimer();
         urlObserver.disconnect();
     });
 

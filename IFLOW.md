@@ -12,7 +12,7 @@ SurfHelper/
 │   ├── coc-layout-helper.md       # COC阵型辅助说明文档
 │   ├── coc-layout-helper.user.js  # COC阵型辅助脚本 (v1.1.1)
 │   ├── javdb-manager.md           # JavDB影片管理器说明文档
-│   ├── javdb-manager.user.js      # JavDB影片管理器 (v1.0.0)
+│   ├── javdb-manager.user.js      # JavDB影片管理器 (v1.1.0)
 │   ├── video-parser.md            # 视频解析器说明文档
 │   ├── video-parser.user.js       # 视频解析器 (v1.4.1)
 │   ├── weibo-magnet-linker.md     # 微博磁力链说明文档
@@ -50,7 +50,7 @@ SurfHelper/
 - **权限**: GM_addStyle, GM_setClipboard
 - **配置**: 可开启调试模式，自定义历史记录数量
 
-### 3. JavDB影片管理器 (v1.0.0)
+### 3. JavDB影片管理器 (v1.1.0)
 - **文件**: `tampermonkey-scripts/javdb-manager.user.js`
 - **文档**: `tampermonkey-scripts/javdb-manager.md`
 - **功能**: JavDB 网站影片管理工具，提供智能过滤和管理功能
@@ -58,7 +58,8 @@ SurfHelper/
   - 已看/想看影片自动屏蔽（降低透明度）
   - 低分影片智能屏蔽（3.5分以下，5人以上评价）
   - 高分影片高亮显示（4.5分以上显示"必看"，4.0分以上显示"推荐"）
-  - 批量导入已看/想看列表（支持翻页自动导入）
+  - 批量导入已看/想看列表（URL翻页导入，智能停止机制）
+  - 去重处理（同一番号只能在想看/已看中存在一个，按最后导入位置计算）
   - 智能搜索和管理功能（快速添加/删除影片）
   - 可视化开关控制（可独立控制各功能模块）
 - **支持网站**: javdb.com
