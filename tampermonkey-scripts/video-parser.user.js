@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Video Parser - 视频解析器
+// @name         VIP视频解析器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.4.0
-// @description  支持多平台的视频解析工具，集成15+个解析接口（跨域统一配置）
+// @version      1.4.1
+// @description  [核心] 多平台视频解析工具，集成16+个解析接口；[功能] 一键解析VIP内容，支持多接口切换；[智能] B站智能过滤，剧集自动切换检测；[跨域] 统一配置处理，无感解析体验
 // @author       RiTian96
 // @match        *://v.qq.com/*
 // @match        *://*.iqiyi.com/*
@@ -34,7 +34,7 @@
         {value: "https://bd.jx.cn/?url=", label: "冰豆解析"},
         {value: "https://jx.973973.xyz/?url=", label: "973解析"},
         {value: "https://jx.xmflv.com/?url=", label: "虾米视频解析"},
-        {value: "https://jx.hls.one/?url=", label: "虾米2"},
+        {value: "https://jx.hls.one/?url=", label: "HLS解析"},
         {value: "https://www.ckplayer.vip/jiexi/?url=", label: "CK"},
         {value: "https://jx.nnxv.cn/tv.php?url=", label: "七哥解析"},
         {value: "https://www.yemu.xyz/?url=", label: "夜幕"},
@@ -42,8 +42,7 @@
         {value: "https://www.playm3u8.cn/jiexi.php?url=", label: "playm3u8"},
         {value: "https://jx.77flv.cc/?url=", label: "七七云解析"},
         {value: "https://video.isyour.love/player/getplayer?url=", label: "芒果TV1"},
-        {value: "https://im1907.top/?jx=", label: "芒果TV2"},
-        {value: "https://jx.hls.one/?url=", label: "HLS解析"}
+        {value: "https://im1907.top/?jx=", label: "芒果TV2"}
     ];
 
     // 播放器容器选择器（按优先级排序）
@@ -106,6 +105,8 @@
     let apiScores = {};
     let lastVideoUrl = '';  // 记录上一次的视频URL，用于检测剧集切换
     let loadingStartTime = 0;  // 记录加载开始时间
+    let urlWatchInterval = null;  // URL监听定时器
+    let eventListeners = [];  // 存储事件监听器引用
 
     // 创建UI（异步）
     async function createUI() {
@@ -487,36 +488,73 @@
         // 加载保存的设置
         await loadSettings();
 
-        // 绑定事件
-        document.getElementById('parser-api-select').addEventListener('change', async (e) => {
-            currentApi = e.target.value;
-            currentApiIndex = apiList.findIndex(api => api.value === currentApi);
-            await saveSettings();
-        });
-
-        document.getElementById('parser-button').addEventListener('click', startParse);
-
-        document.getElementById('auto-parse-toggle').addEventListener('change', async (e) => {
-            autoParseEnabled = e.target.checked;
-            await saveSettings();
-            if (autoParseEnabled && isVideoPage() && shouldAutoParse() && !isParsing) {
-                setTimeout(() => {
-                    startAutoParse();
-                }, 1000);
+        // 绑定事件并存储引用
+        function bindEvents() {
+            // 清理之前的事件监听器
+            cleanupEventListeners();
+            
+            const apiSelect = document.getElementById('parser-api-select');
+            if (apiSelect) {
+                const apiSelectHandler = async (e) => {
+                    currentApi = e.target.value;
+                    currentApiIndex = apiList.findIndex(api => api.value === currentApi);
+                    await saveSettings();
+                };
+                apiSelect.addEventListener('change', apiSelectHandler);
+                eventListeners.push({ element: apiSelect, event: 'change', handler: apiSelectHandler });
             }
-        });
 
-        document.getElementById('next-api-btn').addEventListener('click', async () => {
-            await switchToNextApi();
-        });
+            const parseButton = document.getElementById('parser-button');
+            if (parseButton) {
+                const parseButtonHandler = () => startParse();
+                parseButton.addEventListener('click', parseButtonHandler);
+                eventListeners.push({ element: parseButton, event: 'click', handler: parseButtonHandler });
+            }
 
-        document.getElementById('like-btn').addEventListener('click', async () => {
-            await voteApi(currentApi, 1);
-        });
+            const autoParseToggle = document.getElementById('auto-parse-toggle');
+            if (autoParseToggle) {
+                const autoParseHandler = async (e) => {
+                    autoParseEnabled = e.target.checked;
+                    await saveSettings();
+                    if (autoParseEnabled && isVideoPage() && shouldAutoParse() && !isParsing) {
+                        setTimeout(() => {
+                            startAutoParse();
+                        }, 1000);
+                    }
+                };
+                autoParseToggle.addEventListener('change', autoParseHandler);
+                eventListeners.push({ element: autoParseToggle, event: 'change', handler: autoParseHandler });
+            }
 
-        document.getElementById('dislike-btn').addEventListener('click', async () => {
-            await voteApi(currentApi, -1);
-        });
+            const nextApiBtn = document.getElementById('next-api-btn');
+            if (nextApiBtn) {
+                const nextApiHandler = async () => {
+                    await switchToNextApi();
+                };
+                nextApiBtn.addEventListener('click', nextApiHandler);
+                eventListeners.push({ element: nextApiBtn, event: 'click', handler: nextApiHandler });
+            }
+
+            const likeBtn = document.getElementById('like-btn');
+            if (likeBtn) {
+                const likeHandler = async () => {
+                    await voteApi(currentApi, 1);
+                };
+                likeBtn.addEventListener('click', likeHandler);
+                eventListeners.push({ element: likeBtn, event: 'click', handler: likeHandler });
+            }
+
+            const dislikeBtn = document.getElementById('dislike-btn');
+            if (dislikeBtn) {
+                const dislikeHandler = async () => {
+                    await voteApi(currentApi, -1);
+                };
+                dislikeBtn.addEventListener('click', dislikeHandler);
+                eventListeners.push({ element: dislikeBtn, event: 'click', handler: dislikeHandler });
+            }
+        }
+        
+        bindEvents();
     }
 
     // 显示状态
@@ -740,8 +778,10 @@
 
         isParsing = true;
         const button = document.getElementById('parser-button');
-        button.disabled = true;
-        button.textContent = '解析中...';
+        if (button) {
+            button.disabled = true;
+            button.textContent = '解析中...';
+        }
         
         // 立即显示加载状态，提升用户体验
         showStatus(`正在使用 ${apiList[currentApiIndex].label} 解析...`, 'loading');
@@ -754,32 +794,43 @@
             clearParse();
 
             // 使用requestAnimationFrame确保UI更新后再执行嵌入
-            requestAnimationFrame(() => {
-                // 注入iframe
-                injectPlayer(parseUrl);
+            await new Promise(resolve => {
+                requestAnimationFrame(async () => {
+                    try {
+                        // 注入iframe
+                        await injectPlayer(parseUrl);
 
-                // 解析成功，增加评分
-                updateApiScore(currentApi, 1);
-                saveSettings();
+                        // 解析成功，增加评分
+                        await updateApiScore(currentApi, 1);
+                        await saveSettings();
 
-                showStatus('解析成功！正在播放...', 'success');
-
-                // 解析成功后恢复按钮状态
-                isParsing = false;
-                button.disabled = false;
-                button.textContent = '开始解析';
+                        showStatus('解析成功！正在播放...', 'success');
+                    } catch (error) {
+                        throw error;
+                    } finally {
+                        // 解析成功后恢复按钮状态
+                        isParsing = false;
+                        if (button) {
+                            button.disabled = false;
+                            button.textContent = '开始解析';
+                        }
+                    }
+                    resolve();
+                });
             });
         } catch (error) {
             console.error('解析失败:', error);
             
             // 详细的错误处理
             let errorMessage = '解析失败';
-            if (error.message.includes('网络')) {
+            if (error.message.includes('网络') || error.message.includes('Failed to fetch')) {
                 errorMessage = '网络连接失败，请检查网络';
             } else if (error.message.includes('超时')) {
                 errorMessage = '解析超时，请重试';
             } else if (error.message.includes('不支持')) {
                 errorMessage = '不支持的视频格式';
+            } else if (error.message.includes('播放器容器')) {
+                errorMessage = '页面结构变化，请刷新页面后重试';
             } else {
                 errorMessage = `解析失败: ${error.message}`;
             }
@@ -796,8 +847,8 @@
                 if (select) select.value = currentApi;
 
                 // 给失败的接口减少评分
-                updateApiScore(failedApi, -1);
-                saveSettings();
+                await updateApiScore(failedApi, -1);
+                await saveSettings();
 
                 showStatus(`${errorMessage}，自动切换到 ${apiList[currentApiIndex].label}...`, 'loading');
                 
@@ -805,12 +856,11 @@
                 setTimeout(() => doParse(), 1000);
             } else {
                 showStatus(`${errorMessage} (已尝试 ${parseAttempts + 1} 个接口)`, 'error', { persistent: true });
-            }
-        } finally {
-            if (!autoParseEnabled || parseAttempts >= apiList.length - 1) {
                 isParsing = false;
-                button.disabled = false;
-                button.textContent = '开始解析';
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = '开始解析';
+                }
             }
         }
     }
@@ -842,10 +892,14 @@
         document.querySelectorAll(nativeVideoSelectors.join(',')).forEach(el => {
             el.style.display = '';
         });
+        
+        // 清除加载状态
+        loadingStartTime = 0;
+        isParsing = false;
     }
 
     // 注入播放器
-    function injectPlayer(parseUrl) {
+    async function injectPlayer(parseUrl) {
         // 查找播放器容器
         let playerContainer = null;
         for (const selector of playerContainerSelectors) {
@@ -854,7 +908,29 @@
         }
 
         if (!playerContainer) {
-            throw new Error('未找到播放器容器，可能是不支持的视频页面');
+            // 尝试查找更多可能的容器
+            const fallbackSelectors = [
+                'div[class*="player"]',
+                'div[id*="player"]',
+                'div[class*="video"]',
+                'div[id*="video"]',
+                'main',
+                '.main',
+                '#main',
+                'body'
+            ];
+            
+            for (const selector of fallbackSelectors) {
+                playerContainer = document.querySelector(selector);
+                if (playerContainer && playerContainer.offsetWidth > 200 && playerContainer.offsetHeight > 200) {
+                    console.log(`使用备用容器: ${selector}`);
+                    break;
+                }
+            }
+            
+            if (!playerContainer) {
+                throw new Error('未找到播放器容器，可能是不支持的视频页面');
+            }
         }
 
         // 确保容器定位为relative
@@ -875,6 +951,18 @@
         iframe.className = 'void-player-iframe';
         iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
         iframe.allowFullscreen = true;
+
+        // 添加错误处理
+        iframe.onerror = () => {
+            console.error('iframe加载失败');
+            showStatus('解析接口加载失败，请尝试其他接口', 'error', { persistent: true });
+            isParsing = false;
+            const button = document.getElementById('parser-button');
+            if (button) {
+                button.disabled = false;
+                button.textContent = '开始解析';
+            }
+        };
 
         // 添加到容器
         playerContainer.appendChild(iframe);
@@ -946,7 +1034,12 @@
             return false;
         }
         
-        setInterval(() => {
+        // 清理之前的定时器
+        if (urlWatchInterval) {
+            clearInterval(urlWatchInterval);
+        }
+        
+        urlWatchInterval = setInterval(() => {
             const currentUrl = window.location.href;
             if (currentUrl !== lastUrl) {
                 const wasEpisodeSwitch = isEpisodeSwitch(lastUrl, currentUrl);
@@ -973,9 +1066,36 @@
         init();
     }
 
+    // 清理事件监听器
+    function cleanupEventListeners() {
+        eventListeners.forEach(({ element, event, handler }) => {
+            if (element && handler) {
+                element.removeEventListener(event, handler);
+            }
+        });
+        eventListeners = [];
+    }
+
+    // 清理所有资源
+    function cleanup() {
+        cleanupEventListeners();
+        if (guardianInterval) {
+            clearInterval(guardianInterval);
+            guardianInterval = null;
+        }
+        if (urlWatchInterval) {
+            clearInterval(urlWatchInterval);
+            urlWatchInterval = null;
+        }
+        clearParse();
+    }
+
     async function init() {
         if (panelCreated) return;
         panelCreated = true;
+
+        // 页面卸载时清理资源
+        window.addEventListener('beforeunload', cleanup);
 
         await createUI();
         watchUrlChanges();

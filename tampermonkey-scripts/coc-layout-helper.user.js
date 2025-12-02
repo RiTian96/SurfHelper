@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         COC 阵型辅助 (一键复制+智能大图+侧边背包)
+// @name         COC阵型复制助手
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.1.0
+// @version      1.1.1
 // @description  [核心] 绕过付费/次数限制，后台无感提取阵型链接；[辅助] 鼠标悬停显示高清巨型大图(自适应尺寸，智能避让鼠标)；[资源] 左侧悬浮背包记录历史阵型，支持二维码扫码直连。
 // @author       RiTian96
 // @match        *://coc.6oh.cn/*
@@ -79,7 +79,7 @@
                 border: 2px solid #555;
                 border-radius: 12px;
                 box-shadow: 0 30px 100px rgba(0,0,0,0.9); /* 强阴影提升层次感 */
-                z-index: 9999999;
+                z-index: 2147483647; /* 使用最高z-index确保在最上层 */
 
                 /* 布局居中，消除黑边关键 */
                 display: none;
@@ -90,15 +90,18 @@
                 pointer-events: none; /* 关键：鼠标穿透 */
                 backdrop-filter: blur(5px);
                 transition: opacity 0.2s;
+                will-change: opacity; /* 优化性能 */
             }
 
             #coc-magic-lens img {
                 display: block;
                 max-width: 100%;
-                max-height: 90vh; /* 确保图片完整显示 */
+                max-height: 85vh; /* 确保图片完整显示，留出边距 */
                 object-fit: contain;
                 opacity: 0;
-                transition: opacity 0.3s;
+                transition: opacity 0.3s ease;
+                user-select: none; /* 防止图片被选中 */
+                -webkit-user-drag: none; /* 防止拖拽 */
             }
 
             /* 加载提示 */
@@ -106,7 +109,8 @@
                 content: "高清原图读取中...";
                 position: absolute;
                 color: #888; font-size: 12px; letter-spacing: 1px;
-                z-index: -1;
+                z-index: 1; /* 确保文字可见 */
+                pointer-events: none;
             }
 
             /* --- [组件] 侧边背包 (Loot Bag) --- */
@@ -147,11 +151,15 @@
                 position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
                 background: rgba(25, 25, 25, 0.98); backdrop-filter: blur(10px);
                 color: #fff; padding: 25px; border-radius: 16px;
-                z-index: 2147483647; width: 340px; text-align: center;
+                z-index: 2147483647; width: 340px; max-width: 90vw; text-align: center;
                 box-shadow: 0 25px 80px rgba(0,0,0,0.8); border: 1px solid #444;
-                animation: popUp 0.25s ease-out; font-family: sans-serif;
+                animation: popUp 0.25s ease-out; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                will-change: transform, opacity;
             }
-            @keyframes popUp { from {transform:translate(-50%,-45%) scale(0.95);opacity:0;} to {transform:translate(-50%,-50%) scale(1);opacity:1;} }
+            @keyframes popUp { 
+                from {transform:translate(-50%,-45%) scale(0.95);opacity:0;} 
+                to {transform:translate(-50%,-50%) scale(1);opacity:1;} 
+            }
 
             /* 链接文本域 (自动换行) */
             .coc-link-textarea {
@@ -226,13 +234,16 @@
             if (card) {
                 const lens = document.getElementById('coc-magic-lens');
                 const lensImg = document.getElementById('coc-lens-img');
+                
+                // 安全检查
+                if (!lens || !lensImg) return;
 
                 // 提取高清大图
                 const bigPicLink = card.querySelector('a[href$=".jpg"], a[href$=".png"]');
                 const thumbPic = card.querySelector('img');
                 const imgSrc = bigPicLink ? bigPicLink.href : (thumbPic ? thumbPic.src : null);
 
-                if (imgSrc) {
+                if (imgSrc && imgSrc.trim()) {
                     State.isLensVisible = true;
                     lens.style.display = 'flex'; // flex布局保证图片居中
 
@@ -240,7 +251,14 @@
                         lensImg.style.opacity = '0';
                         lensImg.src = imgSrc;
                         lensImg.dataset.src = imgSrc;
-                        lensImg.onload = () => { lensImg.style.opacity = '1'; };
+                        lensImg.onload = () => { 
+                            if (lensImg) lensImg.style.opacity = '1'; 
+                        };
+                        lensImg.onerror = () => {
+                            log("🔥 图片加载失败:", imgSrc);
+                            lens.style.display = 'none';
+                            State.isLensVisible = false;
+                        };
                     }
                 }
             }
@@ -249,9 +267,11 @@
         document.body.addEventListener('mouseout', function(e) {
             const card = e.target.closest('.zxlb2');
             const related = e.relatedTarget;
+            const lens = document.getElementById('coc-magic-lens');
+            
             if (card && (!related || !card.contains(related))) {
                 State.isLensVisible = false;
-                document.getElementById('coc-magic-lens').style.display = 'none';
+                if (lens) lens.style.display = 'none';
             }
         });
 
@@ -260,6 +280,8 @@
             if (!State.isLensVisible) return;
 
             const lens = document.getElementById('coc-magic-lens');
+            if (!lens) return;
+            
             const screenWidth = window.innerWidth;
             const mouseX = e.clientX;
             const margin = 50; // 距离中心的安全边距
@@ -277,7 +299,7 @@
     }
 
 
-    /**
+        /**
      * =================================================================
      * 5. 核心破解 (Core Ghost Mode)
      * =================================================================
@@ -361,6 +383,8 @@
 
     function renderBag() {
         const list = document.getElementById('coc-loot-list');
+        if (!list) return;
+        
         list.innerHTML = '';
         State.historyLog.forEach(item => {
             const row = document.createElement('div');
@@ -369,10 +393,15 @@
             const idMatch = item.link.match(/id=([^&]+)/);
             const shortId = idMatch ? idMatch[1].substring(0, 6) : 'Link';
             row.innerHTML = `
-                <div style="font-weight:bold;">${item.title}</div>
+                <div style="font-weight:bold;">${item.title || '阵型分享'}</div>
                 <div style="color:#00E676; font-size:10px; margin-top:2px;">ID: ${shortId}...</div>
             `;
-            row.onclick = () => { showModal(item.link); GM_setClipboard(item.link); };
+            row.onclick = () => { 
+                if (item.link) {
+                    showModal(item.link); 
+                    try { GM_setClipboard(item.link); } catch(e) { log("🔥 复制失败:", e); }
+                }
+            };
             list.appendChild(row);
         });
     }

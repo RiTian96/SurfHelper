@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Weibo Magnet Linker (微博磁力链自动补全)
+// @name         微博磁链补全助手
 // @namespace    https://github.com/RiTian96/SurfHelper
 // @version      1.1.0
-// @description  在微博识别 40 位磁力哈希值，自动补全 magnet 头并转换为可点击链接
+// @description  [核心] 智能识别40位磁力哈希值，自动补全magnet前缀；[功能] 一键转换为可点击链接，提升分享体验；[安全] 过滤机制避免误匹配，保护链接代码等元素
 // @author       RiTian96
 // @match        *://weibo.com/*
 // @match        *://s.weibo.com/*
@@ -27,6 +27,11 @@
         // 如果父节点已经是链接、脚本、样式或输入框，则跳过
         const parentTag = textNode.parentNode.tagName;
         if (['A', 'SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'CODE', 'PRE'].includes(parentTag)) {
+            return;
+        }
+        
+        // 避免处理已经生成过的磁力链接
+        if (textNode.parentNode.dataset.generatedMagnet === "true") {
             return;
         }
 
@@ -60,8 +65,24 @@
 
             // 设置样式，使其醒目（参考微博链接颜色）
             a.style.color = '#eb7350';
-            a.style.textDecoration = 'underline';
+            a.style.textDecoration = 'none';
+            a.style.fontWeight = 'bold';
+            a.style.padding = '2px 4px';
+            a.style.borderRadius = '3px';
+            a.style.backgroundColor = 'rgba(235, 115, 80, 0.1)';
+            a.style.transition = 'all 0.2s ease';
             a.target = '_blank'; // 新窗口打开（通常会唤起下载软件）
+            
+            // 添加悬停效果
+            a.addEventListener('mouseenter', function() {
+                this.style.backgroundColor = 'rgba(235, 115, 80, 0.2)';
+                this.style.textDecoration = 'underline';
+            });
+            
+            a.addEventListener('mouseleave', function() {
+                this.style.backgroundColor = 'rgba(235, 115, 80, 0.1)';
+                this.style.textDecoration = 'none';
+            });
 
             // 加上一个标识，防止重复处理（虽然通过检测父节点是 A 已经规避了，但双重保险）
             a.dataset.generatedMagnet = "true";
@@ -83,8 +104,14 @@
         if (node.nodeType === Node.TEXT_NODE) {
             processTextNode(node);
         } else if (node.nodeType === Node.ELEMENT_NODE) {
-            // 忽略特定标签
-            if (['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'IMG'].includes(node.tagName)) return;
+            // 忽略特定标签和已处理过的容器
+            if (['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'IMG', 'NOSCRIPT'].includes(node.tagName)) return;
+            
+            // 避免重复处理已标记的容器
+            if (node.dataset.magnetProcessed === "true") return;
+            
+            // 标记为已处理
+            node.dataset.magnetProcessed = "true";
 
             // 遍历子节点
             // 使用 Array.from防止在遍历过程中修改DOM导致的死循环风险
@@ -92,22 +119,36 @@
         }
     }
 
-    // 1. 初次加载：处理页面现有的内容
-    walk(document.body);
+    // 1. 初次加载：等待页面完全加载后再处理
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => walk(document.body));
+    } else {
+        // 如果页面已经加载完成，延迟一下确保动态内容加载完毕
+        setTimeout(() => walk(document.body), 500);
+    }
 
     // 2. 监听器：处理动态加载的内容（瀑布流、评论展开等）
     const observer = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            for (const node of mutation.addedNodes) {
-                walk(node);
+        // 使用 requestAnimationFrame 优化性能，避免频繁操作DOM
+        requestAnimationFrame(() => {
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes) {
+                    // 只处理元素节点，忽略文本节点
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        walk(node);
+                    }
+                }
             }
-        }
+        });
     });
 
     // 开始监听 document.body 的变化
     observer.observe(document.body, {
         childList: true,
-        subtree: true
+        subtree: true,
+        // 优化：忽略属性变化，只关心节点添加
+        attributes: false,
+        characterData: false
     });
 
 })();
