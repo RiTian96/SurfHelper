@@ -1,5 +1,12 @@
 # SurfHelper 项目上下文
 
+## 🖥️ 开发环境信息
+- **操作系统**: Windows (win32)
+- **Shell 环境**: PowerShell
+- **命令语法**: 使用分号 `;` 分隔命令，而非 `&&`
+- **换行符**: CRLF (`\r\n`)
+- **路径格式**: Windows 反斜杠路径 (`C:\Users\...`)
+
 ## 🔗 相关链接
 - **GitHub仓库**: [https://github.com/RiTian96/SurfHelper](https://github.com/RiTian96/SurfHelper)
 - **Greasy Fork**: [https://greasyfork.org/zh-CN/users/332142-ritian96](https://greasyfork.org/zh-CN/users/332142-ritian96)

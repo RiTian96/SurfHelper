@@ -16,7 +16,7 @@ SurfHelper/
 │   ├── coc-layout-helper.md           # COC阵型复制助手说明文档
 │   ├── coc-layout-helper.user.js      # COC阵型复制助手 (v1.1.2)
 │   ├── javdb-manager.md               # JavDB影片管理器说明文档
-│   ├── javdb-manager.user.js          # JavDB影片管理器 (v1.2.0)
+│   ├── javdb-manager.user.js          # JavDB影片管理器 (v1.3.0)
 │   ├── vip-video-parser.md            # VIP视频解析器说明文档
 │   ├── vip-video-parser.user.js       # VIP视频解析器 (v1.4.2)
 │   ├── weibo-magnet-linker.md         # 微博磁链补全助手说明文档
