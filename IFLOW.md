@@ -10,34 +10,20 @@ SurfHelper 是一个专注于提升网页浏览体验的个人工具集项目，
 SurfHelper/
 ├── tampermonkey-scripts/          # 油猴脚本文件夹
 │   ├── coc-layout-helper.md           # COC阵型辅助说明文档
-│   ├── coc-layout-helper.user.js      # COC阵型辅助脚本 (v1.1.1)
+│   ├── coc-layout-helper.user.js      # COC阵型辅助脚本 (v1.1.2)
 │   ├── javdb-manager.md               # JavDB影片管理器说明文档
-│   ├── javdb-manager.user.js          # JavDB影片管理器 (v1.1.0)
+│   ├── javdb-manager.user.js          # JavDB影片管理器 (v1.1.1)
 │   ├── vip-video-parser.md            # 视频解析器说明文档
-│   ├── vip-video-parser.user.js       # 视频解析器 (v1.4.1)
+│   ├── vip-video-parser.user.js       # 视频解析器 (v1.4.2)
 │   ├── weibo-magnet-linker.md         # 微博磁力链说明文档
-│   └── weibo-magnet-linker.user.js    # 微博磁力链自动补全 (v1.1.0)
+│   └── weibo-magnet-linker.user.js    # 微博磁力链自动补全 (v1.1.1)
 ├── README.md                       # 项目说明文档
 └── IFLOW.md                        # 本文件，项目上下文
 ```
 
 ## 核心组件
 
-### 1. VIP视频解析器 (v1.4.1)
-- **文件**: `tampermonkey-scripts/vip-video-parser.user.js`
-- **文档**: `tampermonkey-scripts/vip-video-parser.md`
-- **功能**: 多平台视频解析工具，集成 15 个解析接口
-- **支持平台**: 腾讯视频、爱奇艺、优酷、B站、芒果TV
-- **特色功能**: 
-  - 键盘快捷键支持 (Ctrl+Enter 快速解析)
-  - 剧集自动切换检测
-  - B站智能过滤（番剧自动解析，普通视频仅手动解析）
-  - 跨域统一配置
-  - 新增 HLS 解析接口支持
-- **运行时机**: document-start
-- **权限**: GM_setValue, GM_getValue, GM_deleteValue
-
-### 2. COC阵型复制助手 (v1.1.1)
+### 1. COC阵型复制助手 (v1.1.2)
 - **文件**: `tampermonkey-scripts/coc-layout-helper.user.js`
 - **文档**: `tampermonkey-scripts/coc-layout-helper.md`
 - **功能**: Clash of Clans 阵型网站增强工具
@@ -50,7 +36,7 @@ SurfHelper/
 - **权限**: GM_addStyle, GM_setClipboard
 - **配置**: 可开启调试模式，自定义历史记录数量
 
-### 3. JavDB影片管理器 (v1.1.0)
+### 2. JavDB影片管理器 (v1.1.1)
 - **文件**: `tampermonkey-scripts/javdb-manager.user.js`
 - **文档**: `tampermonkey-scripts/javdb-manager.md`
 - **功能**: JavDB 网站影片管理工具，提供智能过滤和管理功能
@@ -66,7 +52,21 @@ SurfHelper/
 - **运行时机**: 未明确指定（默认 document-end）
 - **权限**: GM_setValue, GM_getValue, GM_deleteValue, GM_listValues
 
-### 4. 微博磁链补全助手 (v1.1.0)
+### 3. VIP视频解析器 (v1.4.2)
+- **文件**: `tampermonkey-scripts/vip-video-parser.user.js`
+- **文档**: `tampermonkey-scripts/vip-video-parser.md`
+- **功能**: 多平台视频解析工具，集成 15 个解析接口
+- **支持平台**: 腾讯视频、爱奇艺、优酷、B站、芒果TV
+- **特色功能**: 
+  - 键盘快捷键支持 (Ctrl+Enter 快速解析)
+  - 剧集自动切换检测
+  - B站智能过滤（番剧自动解析，普通视频仅手动解析）
+  - 跨域统一配置
+  - 新增 HLS 解析接口支持
+- **运行时机**: document-start
+- **权限**: GM_setValue, GM_getValue, GM_deleteValue
+
+### 4. 微博磁链补全助手 (v1.1.1)
 - **文件**: `tampermonkey-scripts/weibo-magnet-linker.user.js`
 - **文档**: `tampermonkey-scripts/weibo-magnet-linker.md`
 - **功能**: 微博磁力链接自动补全工具
@@ -78,7 +78,7 @@ SurfHelper/
 - **支持网站**: weibo.com, s.weibo.com, d.weibo.com
 - **运行时机**: 未明确指定（默认 document-end）
 - **权限**: 无特殊权限要求
-- **特殊功能**: 唯一包含 @icon 图标的脚本
+- **特殊功能**: 唯一包含 图标的脚本
 
 ## 开发约定
 

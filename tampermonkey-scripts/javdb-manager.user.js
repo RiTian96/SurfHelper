@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.1.0
+// @version      1.1.1
 // @description  [核心] 已看/想看影片自动屏蔽，低分智能过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理
 // @author       RiTian96
 // @match        https://javdb.com/*
+// @icon         https://javdb.com/favicon.ico
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=javdb.com
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_deleteValue

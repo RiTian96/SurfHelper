@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VIP视频解析器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.4.1
+// @version      1.4.2
 // @description  [核心] 多平台视频解析工具，集成15个解析接口；[功能] 一键解析VIP内容，支持多接口切换；[智能] B站智能过滤，剧集自动切换检测；[跨域] 统一配置处理，无感解析体验
 // @author       RiTian96
 // @match        *://v.qq.com/*
@@ -9,6 +9,8 @@
 // @match        *://*.youku.com/*
 // @match        *://*.bilibili.com/*
 // @match        *://*.mgtv.com/*
+// @icon         https://v.qq.com/favicon.ico
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=v.qq.com
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_deleteValue

@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         微博磁链补全助手
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.1.0
+// @version      1.1.1
 // @description  [核心] 智能识别40位磁力哈希值，自动补全magnet前缀；[功能] 一键转换为可点击链接，提升分享体验；[安全] 过滤机制避免误匹配，保护链接代码等元素
 // @author       RiTian96
 // @match        *://weibo.com/*
 // @match        *://s.weibo.com/*
 // @match        *://d.weibo.com/*
+// @icon         https://weibo.com/favicon.ico
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=weibo.com
 // @grant        none
 // @license      MIT
