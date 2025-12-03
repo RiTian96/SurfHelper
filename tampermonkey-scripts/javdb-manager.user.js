@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.1.1
-// @description  [核心] 已看/想看影片自动屏蔽，低分智能过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理
+// @version      1.2.0
+// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理
 // @author       RiTian96
 // @match        https://javdb.com/*
 // @icon         https://javdb.com/favicon.ico
@@ -281,35 +281,33 @@
             // 清除之前的评分相关类
             item.classList.remove('javdb-low-score', 'javdb-normal-score', 'javdb-high-score', 'javdb-excellent');
             
-            // 低分屏蔽功能
+            // 新的评分规则逻辑
             if (CONFIG.enableLowScoreBlock) {
-                // 5人以下评价，不变暗
-                if (reviewCount <= 5) {
-                    debugLog(`评价人数太少(${reviewCount}人)，不屏蔽: ${score}分`);
+                // 10人以下评价，无论多少分都正常显示
+                if (reviewCount <= 10) {
+                    debugLog(`评价人数较少(${reviewCount}人)，正常显示: ${score}分`);
                 }
-                // 5人以上评价的规则
-                else if (score < 3.5) {
-                    item.classList.add('javdb-low-score');
-                    debugLog(`低分变暗: ${score}分, ${reviewCount}人评价`);
-                }
-            }
-            
-            // 评分高亮功能（与低分屏蔽共用开关）
-            if (CONFIG.enableLowScoreBlock) {
-                // 5.0分直接必看
-                if (score === 5.0) {
-                    item.classList.add('javdb-excellent');
-                    debugLog(`满分必看: ${score}分, ${reviewCount}人评价`);
-                }
-                // 4.5分以上推荐
-                else if (score >= 4.5) {
-                    item.classList.add('javdb-high-score');
-                    debugLog(`高分推荐: ${score}分, ${reviewCount}人评价`);
-                }
-                // 推荐影片（4.0-4.5分且至少100人评价）
-                else if (score >= 4.0 && score < 4.5 && reviewCount >= 100) {
-                    item.classList.add('javdb-high-score');
-                    debugLog(`推荐影片: ${score}分, ${reviewCount}人评价`);
+                // 10人以上评价的分级规则
+                else {
+                    // 0-3.5分屏蔽
+                    if (score < 3.5) {
+                        item.classList.add('javdb-low-score');
+                        debugLog(`低分屏蔽: ${score}分, ${reviewCount}人评价`);
+                    }
+                    // 3.5-4.0分正常显示
+                    else if (score >= 3.5 && score < 4.0) {
+                        debugLog(`正常显示: ${score}分, ${reviewCount}人评价`);
+                    }
+                    // 4.0-4.5分推荐
+                    else if (score >= 4.0 && score < 4.5) {
+                        item.classList.add('javdb-high-score');
+                        debugLog(`推荐影片: ${score}分, ${reviewCount}人评价`);
+                    }
+                    // 4.5分以上必看
+                    else if (score >= 4.5) {
+                        item.classList.add('javdb-excellent');
+                        debugLog(`必看影片: ${score}分, ${reviewCount}人评价`);
+                    }
                 }
             }
         } else {
@@ -322,27 +320,30 @@
                 // 清除之前的评分相关类
                 item.classList.remove('javdb-low-score', 'javdb-normal-score', 'javdb-high-score', 'javdb-excellent');
                 
-                // 低分屏蔽
+                // 宽松匹配的新评分规则
                 if (CONFIG.enableLowScoreBlock) {
-                    // 无人评分或0分，不屏蔽
+                    // 无法确定评价人数时，按原逻辑处理
                     if (score === 0 || scoreText.includes('0人')) {
-                        debugLog(`无人评分或0分，不屏蔽: ${score}分`);
+                        debugLog(`无人评分或0分，正常显示: ${score}分`);
                     }
-                    // 低分屏蔽
+                    // 0-3.5分屏蔽
                     else if (score < 3.5) {
                         item.classList.add('javdb-low-score');
-                        debugLog(`低分变暗: ${score}分`);
+                        debugLog(`低分屏蔽: ${score}分`);
                     }
-                }
-                
-                // 高亮功能（与低分屏蔽共用开关）
-                if (CONFIG.enableLowScoreBlock) {
-                    if (score >= 4.5) {
+                    // 3.5-4.0分正常显示
+                    else if (score >= 3.5 && score < 4.0) {
+                        debugLog(`正常显示: ${score}分`);
+                    }
+                    // 4.0-4.5分推荐
+                    else if (score >= 4.0 && score < 4.5) {
                         item.classList.add('javdb-high-score');
-                        debugLog(`高分推荐: ${score}分`);
-                    } else if (score >= 4.0) {
-                        item.classList.add('javdb-high-score');
-                        debugLog(`推荐: ${score}分`);
+                        debugLog(`推荐影片: ${score}分`);
+                    }
+                    // 4.5分以上必看
+                    else if (score >= 4.5) {
+                        item.classList.add('javdb-excellent');
+                        debugLog(`必看影片: ${score}分`);
                     }
                 }
             } else {

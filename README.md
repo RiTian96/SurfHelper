@@ -16,7 +16,7 @@ SurfHelper/
 │   ├── coc-layout-helper.md           # COC阵型复制助手说明文档
 │   ├── coc-layout-helper.user.js      # COC阵型复制助手 (v1.1.2)
 │   ├── javdb-manager.md               # JavDB影片管理器说明文档
-│   ├── javdb-manager.user.js          # JavDB影片管理器 (v1.1.1)
+│   ├── javdb-manager.user.js          # JavDB影片管理器 (v1.2.0)
 │   ├── vip-video-parser.md            # VIP视频解析器说明文档
 │   ├── vip-video-parser.user.js       # VIP视频解析器 (v1.4.2)
 │   ├── weibo-magnet-linker.md         # 微博磁链补全助手说明文档
@@ -29,7 +29,7 @@ SurfHelper/
 | 脚本名称 | 版本 | 功能描述 | 文档 | 安装 |
 |---------|------|---------|------|------|
 | **COC阵型复制助手** | v1.1.2 | 绕过付费限制，一键复制阵型链接，支持大图预览和历史记录 | [📖 查看文档](tampermonkey-scripts/coc-layout-helper.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/coc-layout-helper.user.js) |
-| **JavDB影片管理器** | v1.1.1 | 智能屏蔽已看/想看影片，低分过滤，高分高亮，批量导入管理 | [📖 查看文档](tampermonkey-scripts/javdb-manager.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/javdb-manager.user.js) |
+| **JavDB影片管理器** | v1.2.0 | 智能屏蔽已看/想看影片，智能评分过滤，高分高亮，批量导入管理 | [📖 查看文档](tampermonkey-scripts/javdb-manager.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/javdb-manager.user.js) |
 | **VIP视频解析器** | v1.4.2 | 多平台视频解析，集成15个解析接口，极简界面设计，小图标模式不遮挡视频 | [📖 查看文档](tampermonkey-scripts/vip-video-parser.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/vip-video-parser.user.js) |
 | **微博磁链补全助手** | v1.1.1 | 自动识别并补全微博中的磁力链接 | [📖 查看文档](tampermonkey-scripts/weibo-magnet-linker.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/weibo-magnet-linker.user.js) |
 
@@ -41,10 +41,10 @@ SurfHelper/
 - **历史管理** - 左侧悬浮背包记录历史阵型
 - **二维码支持** - 扫码直连阵型
 
-### 🎬 JavDB影片管理器 (v1.1.1)
+### 🎬 JavDB影片管理器 (v1.2.0)
 - **智能屏蔽** - 自动识别已看/想看影片并降低透明度
-- **低分过滤** - 智能屏蔽3.5分以下且评价人数超过5人的影片
-- **高分高亮** - 4.5分以上显示"必看"，4.0分以上显示"推荐"
+- **智能评分过滤** - 10人以下正常显示，10人以上按分数分级（0-3.5屏蔽，3.5-4.0正常，4.0-4.5推荐，4.5以上必看）
+- **高分高亮** - 4.5分以上显示"必看"，4.0-4.5分显示"推荐"
 - **批量导入** - URL翻页导入，智能停止机制，去重处理
 - **可视化管理** - 右上角悬浮窗，支持搜索和快速操作
 
