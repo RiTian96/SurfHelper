@@ -16,11 +16,11 @@ SurfHelper/
 │   ├── coc-layout-helper.md           # COC阵型辅助说明文档
 │   ├── coc-layout-helper.user.js      # COC阵型辅助脚本 (v1.1.2)
 │   ├── javdb-manager.md               # JavDB影片管理器说明文档
-│   ├── javdb-manager.user.js          # JavDB影片管理器 (v1.1.1)
+│   ├── javdb-manager.user.js          # JavDB影片管理器 (v1.3.0)
 │   ├── vip-video-parser.md            # 视频解析器说明文档
 │   ├── vip-video-parser.user.js       # 视频解析器 (v1.4.2)
-│   ├── weibo-magnet-linker.md         # 微博磁力链说明文档
-│   └── weibo-magnet-linker.user.js    # 微博磁力链自动补全 (v1.1.1)
+│   ├── weibo-magnet-linker.md         # 微博磁链辅助说明文档
+│   └── weibo-magnet-linker.user.js    # 微博磁链自动补全 (v1.1.1)
 ├── README.md                       # 项目说明文档
 └── IFLOW.md                        # 本文件，项目上下文
 ```
@@ -40,7 +40,7 @@ SurfHelper/
 - **权限**: GM_addStyle, GM_setClipboard
 - **配置**: 可开启调试模式，自定义历史记录数量
 
-### 2. JavDB影片管理器 (v1.2.0)
+### 2. JavDB影片管理器 (v1.3.0)
 - **文件**: `tampermonkey-scripts/javdb-manager.user.js`
 - **文档**: `tampermonkey-scripts/javdb-manager.md`
 - **功能**: JavDB 网站影片管理工具，提供智能过滤和管理功能
@@ -51,6 +51,7 @@ SurfHelper/
   - 去重处理（同一番号只能在想看/已看中存在一个，按最后导入位置计算）
   - 智能搜索和管理功能（快速添加/删除影片）
   - 可视化开关控制（可独立控制各功能模块）
+  - **按钮联动**：影片详情页点击想看/看過按钮自动导入番号到本地列表
 - **支持网站**: javdb.com
 - **运行时机**: 未明确指定（默认 document-end）
 - **权限**: GM_setValue, GM_getValue, GM_deleteValue, GM_listValues
@@ -93,18 +94,18 @@ SurfHelper/
 
 ### 脚本元数据
 所有脚本都包含完整的 Tampermonkey 元数据：
-- @name: 脚本名称
-- @namespace: GitHub 项目地址
-- @version: 语义化版本号
-- @description: 功能描述
-- @author: RiTian96
-- @match: 目标网站匹配规则
-- @grant: 所需权限
-- @license: MIT
-// @updateURL    https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/weibo-magnet-linker.user.js
-// @downloadURL  https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/weibo-magnet-linker.user.js
-- @run-at: 运行时机（VIP视频解析器和COC阵型助手使用 document-start）
-- @icon: 图标设置（仅微博磁链补全助手包含）
+- 脚本名称
+- GitHub 项目地址
+- 语义化版本号
+- 功能描述
+- 作者: RiTian96
+- 目标网站匹配规则
+- 所需权限
+- MIT 许可证
+- 自动更新URL
+- 下载URL
+- 运行时机（VIP视频解析器和COC阵型助手使用 document-start）
+- 图标设置（仅微博磁链补全助手包含）
 
 ### 版本管理
 - 采用语义化版本控制 (Major.Minor.Patch)

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.2.0
-// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理
+// @version      1.3.0
+// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 点击想看/看過按钮自动导入番号
 // @author       RiTian96
 // @match        https://javdb.com/*
 // @icon         https://javdb.com/favicon.ico
@@ -189,7 +189,11 @@
             }
         }
         
-        
+        // 添加点击按钮自动导入功能
+        if (window.location.pathname.includes('/v/')) {
+            // 影片详情页，绑定想看/看過按钮
+            bindVideoDetailButtons();
+        }
     }
 
     // 屏蔽功能相关函数
@@ -2065,6 +2069,141 @@
                 messageDiv.parentNode.removeChild(messageDiv);
             }
         }, 2000);
+    }
+
+    // 绑定影片详情页的想看/看過按钮
+    function bindVideoDetailButtons() {
+        debugLog('绑定影片详情页按钮');
+        
+        // 获取当前影片番号
+        const videoCode = getCurrentVideoCode();
+        if (!videoCode) {
+            debugLog('无法获取当前影片番号');
+            return;
+        }
+        
+        debugLog(`当前影片番号: ${videoCode}`);
+        
+        // 绑定"想看"按钮
+        const wantButton = document.querySelector('form.button_to[action*="/reviews/want_to_watch"] button') ||
+                          Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('想看'));
+        
+        if (wantButton && !wantButton.hasAttribute('data-javdb-manager-bound')) {
+            wantButton.setAttribute('data-javdb-manager-bound', 'true');
+            wantButton.addEventListener('click', (e) => {
+                debugLog('点击了想看按钮');
+                // 延迟执行，确保网站的处理完成
+                setTimeout(() => {
+                    addVideoToList(videoCode, 'wanted');
+                }, 1000);
+            });
+            debugLog('已绑定想看按钮');
+        }
+        
+        // 绑定"看過"按钮
+        const watchedButton = document.querySelector('form.button_to[action*="/reviews/watched"] button') ||
+                            Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('看過'));
+        
+        if (watchedButton && !watchedButton.hasAttribute('data-javdb-manager-bound')) {
+            watchedButton.setAttribute('data-javdb-manager-bound', 'true');
+            watchedButton.addEventListener('click', (e) => {
+                debugLog('点击了看過按钮');
+                // 延迟执行，确保网站的处理完成
+                setTimeout(() => {
+                    addVideoToList(videoCode, 'watched');
+                }, 1000);
+            });
+            debugLog('已绑定看過按钮');
+        }
+    }
+    
+    // 获取当前影片番号
+    function getCurrentVideoCode() {
+        // 从页面标题获取番号（最准确）
+        const titleMatch = document.title.match(/^([A-Z0-9\-]+)/);
+        if (titleMatch) {
+            return titleMatch[1];
+        }
+        
+        // 从页面内容获取番号（h2标题）
+        const titleElement = document.querySelector('h2.title strong');
+        if (titleElement) {
+            const codeMatch = titleElement.textContent.trim().match(/^([A-Z0-9\-]+)/);
+            if (codeMatch) {
+                return codeMatch[1];
+            }
+        }
+        
+        // 从复制按钮获取番号
+        const copyButton = document.querySelector('[data-clipboard-text]');
+        if (copyButton) {
+            const clipText = copyButton.getAttribute('data-clipboard-text');
+            const codeMatch = clipText.match(/^([A-Z0-9\-]+)/);
+            if (codeMatch) {
+                return codeMatch[1];
+            }
+        }
+        
+        // 从其他可能的标题元素获取番号
+        const possibleSelectors = [
+            '.title strong',
+            '.video-title strong',
+            'h1 strong',
+            '.movie-title strong'
+        ];
+        
+        for (const selector of possibleSelectors) {
+            const element = document.querySelector(selector);
+            if (element) {
+                const codeMatch = element.textContent.trim().match(/^([A-Z0-9\-]+)/);
+                if (codeMatch) {
+                    return codeMatch[1];
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    // 添加影片到列表
+    function addVideoToList(videoCode, listType) {
+        debugLog(`添加影片 ${videoCode} 到 ${listType} 列表`);
+        
+        const storageKey = listType === 'watched' ? CONFIG.watchedStorageKey : CONFIG.wantedStorageKey;
+        const oppositeKey = listType === 'watched' ? CONFIG.wantedStorageKey : CONFIG.watchedStorageKey;
+        
+        // 获取现有列表
+        let currentList = GM_getValue(storageKey, []);
+        let oppositeList = GM_getValue(oppositeKey, []);
+        
+        // 检查是否已存在
+        if (currentList.includes(videoCode)) {
+            showMessage(`番号 ${videoCode} 已在${listType === 'watched' ? '看过' : '想看'}列表中`, 'warning');
+            return;
+        }
+        
+        // 从对面列表中移除（如果存在）
+        if (oppositeList.includes(videoCode)) {
+            oppositeList = oppositeList.filter(code => code !== videoCode);
+            GM_setValue(oppositeKey, oppositeList);
+            showMessage(`番号 ${videoCode} 已从${listType === 'watched' ? '想看' : '看过'}列表移除，并添加到${listType === 'watched' ? '看过' : '想看'}列表`, 'info');
+        } else {
+            showMessage(`番号 ${videoCode} 已添加到${listType === 'watched' ? '看过' : '想看'}列表`, 'success');
+        }
+        
+        // 添加到新列表
+        currentList.push(videoCode);
+        GM_setValue(storageKey, currentList);
+        
+        // 更新UI
+        updateGlobalCount();
+        
+        // 重新应用屏蔽效果
+        setTimeout(() => {
+            applyBlockEffect();
+        }, 100);
+        
+        debugLog(`成功添加 ${videoCode} 到 ${listType} 列表`);
     }
 
     // 清理函数，在页面卸载时调用
