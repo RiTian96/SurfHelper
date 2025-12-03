@@ -2,7 +2,7 @@
 // @name         VIP视频解析器
 // @namespace    https://github.com/RiTian96/SurfHelper
 // @version      1.4.1
-// @description  [核心] 多平台视频解析工具，集成16+个解析接口；[功能] 一键解析VIP内容，支持多接口切换；[智能] B站智能过滤，剧集自动切换检测；[跨域] 统一配置处理，无感解析体验
+// @description  [核心] 多平台视频解析工具，集成15个解析接口；[功能] 一键解析VIP内容，支持多接口切换；[智能] B站智能过滤，剧集自动切换检测；[跨域] 统一配置处理，无感解析体验
 // @author       RiTian96
 // @match        *://v.qq.com/*
 // @match        *://*.iqiyi.com/*
@@ -14,8 +14,8 @@
 // @grant        GM_deleteValue
 // @run-at       document-start
 // @license      MIT
-// @updateURL    https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/video-parser.user.js
-// @downloadURL  https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/video-parser.user.js
+// @updateURL    https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/vip-video-parser.user.js
+// @downloadURL  https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/vip-video-parser.user.js
 // ==/UserScript==
 
 (function() {

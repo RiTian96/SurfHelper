@@ -9,14 +9,14 @@ SurfHelper 是一个专注于提升网页浏览体验的个人工具集项目，
 ```
 SurfHelper/
 ├── tampermonkey-scripts/          # 油猴脚本文件夹
-│   ├── coc-layout-helper.md       # COC阵型辅助说明文档
-│   ├── coc-layout-helper.user.js  # COC阵型辅助脚本 (v1.1.1)
-│   ├── javdb-manager.md           # JavDB影片管理器说明文档
-│   ├── javdb-manager.user.js      # JavDB影片管理器 (v1.1.0)
-│   ├── video-parser.md            # 视频解析器说明文档
-│   ├── video-parser.user.js       # 视频解析器 (v1.4.1)
-│   ├── weibo-magnet-linker.md     # 微博磁力链说明文档
-│   └── weibo-magnet-linker.user.js # 微博磁力链自动补全 (v1.1.0)
+│   ├── coc-layout-helper.md           # COC阵型辅助说明文档
+│   ├── coc-layout-helper.user.js      # COC阵型辅助脚本 (v1.1.1)
+│   ├── javdb-manager.md               # JavDB影片管理器说明文档
+│   ├── javdb-manager.user.js          # JavDB影片管理器 (v1.1.0)
+│   ├── vip-video-parser.md            # 视频解析器说明文档
+│   ├── vip-video-parser.user.js       # 视频解析器 (v1.4.1)
+│   ├── weibo-magnet-linker.md         # 微博磁力链说明文档
+│   └── weibo-magnet-linker.user.js    # 微博磁力链自动补全 (v1.1.0)
 ├── README.md                       # 项目说明文档
 └── IFLOW.md                        # 本文件，项目上下文
 ```
@@ -24,9 +24,9 @@ SurfHelper/
 ## 核心组件
 
 ### 1. VIP视频解析器 (v1.4.1)
-- **文件**: `tampermonkey-scripts/video-parser.user.js`
-- **文档**: `tampermonkey-scripts/video-parser.md`
-- **功能**: 多平台视频解析工具，集成 16+ 解析接口
+- **文件**: `tampermonkey-scripts/vip-video-parser.user.js`
+- **文档**: `tampermonkey-scripts/vip-video-parser.md`
+- **功能**: 多平台视频解析工具，集成 15 个解析接口
 - **支持平台**: 腾讯视频、爱奇艺、优酷、B站、芒果TV
 - **特色功能**: 
   - 键盘快捷键支持 (Ctrl+Enter 快速解析)
@@ -98,7 +98,8 @@ SurfHelper/
 - @match: 目标网站匹配规则
 - @grant: 所需权限
 - @license: MIT
-- @updateURL/@downloadURL: 自动更新支持
+// @updateURL    https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/weibo-magnet-linker.user.js
+// @downloadURL  https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/weibo-magnet-linker.user.js
 - @run-at: 运行时机（VIP视频解析器和COC阵型助手使用 document-start）
 - @icon: 图标设置（仅微博磁链补全助手包含）
 

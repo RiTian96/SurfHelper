@@ -9,14 +9,14 @@
 ```
 SurfHelper/
 ├── tampermonkey-scripts/          # 油猴脚本文件夹
-│   ├── coc-layout-helper.md       # COC阵型复制助手说明文档
-│   ├── coc-layout-helper.user.js  # COC阵型复制助手 (v1.1.1)
-│   ├── javdb-manager.md           # JavDB影片管理器说明文档
-│   ├── javdb-manager.user.js      # JavDB影片管理器 (v1.1.0)
-│   ├── video-parser.md            # VIP视频解析器说明文档
-│   ├── video-parser.user.js       # VIP视频解析器 (v1.4.1)
-│   ├── weibo-magnet-linker.md     # 微博磁链补全助手说明文档
-│   └── weibo-magnet-linker.user.js # 微博磁链补全助手 (v1.1.0)
+│   ├── coc-layout-helper.md           # COC阵型复制助手说明文档
+│   ├── coc-layout-helper.user.js      # COC阵型复制助手 (v1.1.1)
+│   ├── javdb-manager.md               # JavDB影片管理器说明文档
+│   ├── javdb-manager.user.js          # JavDB影片管理器 (v1.1.0)
+│   ├── vip-video-parser.md            # VIP视频解析器说明文档
+│   ├── vip-video-parser.user.js       # VIP视频解析器 (v1.4.1)
+│   ├── weibo-magnet-linker.md         # 微博磁链补全助手说明文档
+│   └── weibo-magnet-linker.user.js    # 微博磁链补全助手 (v1.1.0)
 └── README.md                       # 项目说明文档
 ```
 
@@ -27,7 +27,7 @@ SurfHelper/
 | **COC阵型复制助手** | v1.1.1 | 绕过付费限制，一键复制阵型链接，支持大图预览和历史记录 | [📖 查看文档](tampermonkey-scripts/coc-layout-helper.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/coc-layout-helper.user.js) |
 | **JavDB影片管理器** | v1.1.0 | 智能屏蔽已看/想看影片，低分过滤，高分高亮，批量导入管理 | [📖 查看文档](tampermonkey-scripts/javdb-manager.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/javdb-manager.user.js) |
 | **微博磁链补全助手** | v1.1.0 | 自动识别并补全微博中的磁力链接 | [📖 查看文档](tampermonkey-scripts/weibo-magnet-linker.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/weibo-magnet-linker.user.js) |
-| **VIP视频解析器** | v1.4.1 | 多平台视频解析，集成16+解析接口，极简界面设计，小图标模式不遮挡视频 | [📖 查看文档](tampermonkey-scripts/video-parser.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/video-parser.user.js) |
+| **VIP视频解析器** | v1.4.1 | 多平台视频解析，集成15个解析接口，极简界面设计，小图标模式不遮挡视频 | [📖 查看文档](tampermonkey-scripts/vip-video-parser.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/vip-video-parser.user.js) |
 
 ## ✨ 特色功能
 
