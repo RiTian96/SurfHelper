@@ -1,5 +1,9 @@
 # COC阵型复制助手
 
+## 🔗 相关链接
+- **GitHub仓库**: [https://github.com/RiTian96/SurfHelper](https://github.com/RiTian96/SurfHelper)
+- **Greasy Fork**: [https://greasyfork.org/zh-CN/users/332142-ritian96](https://greasyfork.org/zh-CN/users/332142-ritian96)
+
 ## 📋 脚本介绍
 
 COC阵型复制助手是一款专为 Clash of Clans (部落冲突) 玩家设计的强大工具，能够绕过网站的付费和次数限制，让您轻松获取和分享阵型链接。脚本集成了多项实用功能，提供极致的用户体验。

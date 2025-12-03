@@ -2,6 +2,10 @@
 
 > **从零开始改善你的上网体验**
 
+## 🔗 相关链接
+- **GitHub仓库**: [https://github.com/RiTian96/SurfHelper](https://github.com/RiTian96/SurfHelper)
+- **Greasy Fork**: [https://greasyfork.org/zh-CN/users/332142-ritian96](https://greasyfork.org/zh-CN/users/332142-ritian96)
+
 个人自用备份仓库，包含各种实用工具和脚本，专注于提升网页浏览和使用体验。
 
 ## 📁 项目结构

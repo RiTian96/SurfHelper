@@ -1,5 +1,9 @@
 # VIP视频解析器
 
+## 🔗 相关链接
+- **GitHub仓库**: [https://github.com/RiTian96/SurfHelper](https://github.com/RiTian96/SurfHelper)
+- **Greasy Fork**: [https://greasyfork.org/zh-CN/users/332142-ritian96](https://greasyfork.org/zh-CN/users/332142-ritian96)
+
 ## 📋 脚本介绍
 
 VIP视频解析器是一款功能强大的多平台视频解析工具，集成了15个解析接口，支持主流视频网站的VIP内容解析，让您轻松观看付费内容。

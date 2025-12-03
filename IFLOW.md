@@ -1,5 +1,9 @@
 # SurfHelper 项目上下文
 
+## 🔗 相关链接
+- **GitHub仓库**: [https://github.com/RiTian96/SurfHelper](https://github.com/RiTian96/SurfHelper)
+- **Greasy Fork**: [https://greasyfork.org/zh-CN/users/332142-ritian96](https://greasyfork.org/zh-CN/users/332142-ritian96)
+
 ## 项目概述
 
 SurfHelper 是一个专注于提升网页浏览体验的个人工具集项目，主要包含多个 Tampermonkey 油猴脚本。该项目于 2025 年 12 月 2 日创建，采用 MIT 许可证，托管在 GitHub 上。

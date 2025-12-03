@@ -1,5 +1,9 @@
 # 微博磁链补全助手
 
+## 🔗 相关链接
+- **GitHub仓库**: [https://github.com/RiTian96/SurfHelper](https://github.com/RiTian96/SurfHelper)
+- **Greasy Fork**: [https://greasyfork.org/zh-CN/users/332142-ritian96](https://greasyfork.org/zh-CN/users/332142-ritian96)
+
 ## 📋 脚本介绍
 
 Weibo Magnet Linker 是一款专为微博设计的磁力链接增强工具，能够自动识别页面中的40位磁力哈希值，并自动补全为可点击的 magnet 链接，极大提升资源分享体验。

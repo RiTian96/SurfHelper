@@ -1,5 +1,9 @@
 # JavDB影片管理器
 
+## 🔗 相关链接
+- **GitHub仓库**: [https://github.com/RiTian96/SurfHelper](https://github.com/RiTian96/SurfHelper)
+- **Greasy Fork**: [https://greasyfork.org/zh-CN/users/332142-ritian96](https://greasyfork.org/zh-CN/users/332142-ritian96)
+
 ## 📋 脚本介绍
 
 JavDB 影片管理器是一款专为 JavDB 网站设计的智能影片管理工具，提供影片屏蔽、评分高亮、批量导入等功能，帮助用户更高效地管理和浏览影片内容。
