@@ -13,7 +13,30 @@
 
 ## 项目概述
 
-SurfHelper 是一个专注于提升网页浏览体验的个人工具集项目，主要包含多个 Tampermonkey 油猴脚本。
+SurfHelper 是一个专注于提升网页浏览体验的个人工具集项目，主要包含多个 Tampermonkey 油猴脚本。项目采用模块化设计，每个脚本独立运行，专注于特定网站的功能增强。
+
+## 🛠️ 脚本矩阵
+
+### 当前脚本列表
+1. **COC阵型复制助手** (`coc-layout-helper.user.js`)
+   - 版本: 1.1.3
+   - 目标网站: `*://coc.6oh.cn/*`
+   - 核心功能: 绕过付费限制提取阵型链接，大图预览，历史记录
+
+2. **JavDB影片管理器** (`javdb-manager.user.js`)
+   - 版本: 1.4.0
+   - 目标网站: `https://javdb.com/*`
+   - 核心功能: 已看/想看影片屏蔽，评分高亮，批量管理
+
+3. **VIP视频解析器** (`vip-video-parser.user.js`)
+   - 版本: 1.4.2
+   - 目标网站: 多平台视频网站
+   - 核心功能: 15个解析接口集成，一键解析VIP内容
+
+4. **微博磁链补全助手** (`weibo-magnet-linker.user.js`)
+   - 版本: 1.1.1
+   - 目标网站: `*://weibo.com/*`, `*://s.weibo.com/*`, `*://d.weibo.com/*`
+   - 核心功能: 智能识别磁力哈希值，自动补全magnet链接
 
 ## 开发约定
 
@@ -23,15 +46,25 @@ SurfHelper 是一个专注于提升网页浏览体验的个人工具集项目，
 - 代码结构清晰，分段注释明确
 - 功能模块化，配置与逻辑分离
 
-### 脚本元数据
+### 脚本元数据规范
 所有脚本都包含完整的 Tampermonkey 元数据：
-- 脚本名称、GitHub 项目地址、语义化版本号、功能描述
-- 作者: RiTian96、目标网站匹配规则、所需权限、MIT 许可证
-- 自动更新URL、下载URL、运行时机、图标设置
+- **@name**: 脚本名称（中文）
+- **@namespace**: GitHub项目地址
+- **@version**: 语义化版本号 (Major.Minor.Patch)
+- **@description**: 详细功能描述，使用[]标记核心功能点
+- **@author**: RiTian96
+- **@match**: 目标网站匹配规则
+- **@icon**: 网站favicon图标（双重保险）
+- **@grant**: 所需权限（GM_addStyle, GM_setValue等）
+- **@run-at**: 运行时机（document-start或document-idle）
+- **@license**: MIT
+- **@updateURL**: GitHub Raw更新地址
+- **@downloadURL**: GitHub Raw下载地址
 
 ### 版本管理
 - 采用语义化版本控制 (Major.Minor.Patch)
 - 每个脚本都有对应的 Markdown 文档和更新日志
+- 版本号在脚本和文档中保持同步
 
 ### 文档格式规范
 所有脚本文档必须包含以下5个核心部分：
@@ -102,3 +135,20 @@ SurfHelper 是一个专注于提升网页浏览体验的个人工具集项目，
 - 项目采用 MIT 许可证
 - 可自由使用、修改和分发
 
+## 项目结构
+
+```
+SurfHelper/
+├── IFLOW.md                    # 项目上下文文档（本文件）
+├── README.md                   # 项目主要说明文档
+├── .git/                       # Git版本控制
+└── tampermonkey-scripts/       # 油猴脚本目录
+    ├── coc-layout-helper.md    # COC阵型助手文档
+    ├── coc-layout-helper.user.js # COC阵型助手脚本
+    ├── javdb-manager.md        # JavDB管理器文档
+    ├── javdb-manager.user.js   # JavDB管理器脚本
+    ├── vip-video-parser.md     # VIP视频解析器文档
+    ├── vip-video-parser.user.js # VIP视频解析器脚本
+    ├── weibo-magnet-linker.md  # 微博磁链助手文档
+    └── weibo-magnet-linker.user.js # 微博磁链助手脚本
+```
