@@ -14,7 +14,7 @@
 SurfHelper/
 ├── tampermonkey-scripts/          # 油猴脚本文件夹
 │   ├── coc-layout-helper.md           # COC阵型复制助手说明文档
-│   ├── coc-layout-helper.user.js      # COC阵型复制助手 (v1.1.2)
+│   ├── coc-layout-helper.user.js      # COC阵型复制助手 (v1.1.3)
 │   ├── javdb-manager.md               # JavDB影片管理器说明文档
 │   ├── javdb-manager.user.js          # JavDB影片管理器 (v1.3.0)
 │   ├── vip-video-parser.md            # VIP视频解析器说明文档
@@ -28,14 +28,14 @@ SurfHelper/
 
 | 脚本名称 | 版本 | 功能描述 | 文档 | 安装 |
 |---------|------|---------|------|------|
-| **COC阵型复制助手** | v1.1.2 | 绕过付费限制，一键复制阵型链接，支持大图预览和历史记录 | [📖 查看文档](tampermonkey-scripts/coc-layout-helper.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/coc-layout-helper.user.js) |
+| **COC阵型复制助手** | v1.1.3 | 绕过付费限制，一键复制阵型链接，支持大图预览和历史记录 | [📖 查看文档](tampermonkey-scripts/coc-layout-helper.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/coc-layout-helper.user.js) |
 | **JavDB影片管理器** | v1.3.0 | 智能屏蔽已看/想看影片，智能评分过滤，高分高亮，批量导入管理，按钮联动自动导入 | [📖 查看文档](tampermonkey-scripts/javdb-manager.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/javdb-manager.user.js) |
 | **VIP视频解析器** | v1.4.2 | 多平台视频解析，集成15个解析接口，极简界面设计，小图标模式不遮挡视频 | [📖 查看文档](tampermonkey-scripts/vip-video-parser.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/vip-video-parser.user.js) |
 | **微博磁链补全助手** | v1.1.1 | 自动识别并补全微博中的磁力链接 | [📖 查看文档](tampermonkey-scripts/weibo-magnet-linker.md) | [🔧 安装脚本](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/weibo-magnet-linker.user.js) |
 
 ## ✨ 特色功能
 
-### 🏰 COC阵型复制助手 (v1.1.2)
+### 🏰 COC阵型复制助手 (v1.1.3)
 - **绕过限制** - 后台无感提取阵型链接，无需付费
 - **智能预览** - 鼠标悬停显示高清大图，智能避让
 - **历史管理** - 左侧悬浮背包记录历史阵型

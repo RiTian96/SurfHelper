@@ -21,7 +21,7 @@ SurfHelper 是一个专注于提升网页浏览体验的个人工具集项目，
 SurfHelper/
 ├── tampermonkey-scripts/          # 油猴脚本文件夹
 │   ├── coc-layout-helper.md           # COC阵型辅助说明文档
-│   ├── coc-layout-helper.user.js      # COC阵型辅助脚本 (v1.1.2)
+│   ├── coc-layout-helper.user.js      # COC阵型辅助脚本 (v1.1.3)
 │   ├── javdb-manager.md               # JavDB影片管理器说明文档
 │   ├── javdb-manager.user.js          # JavDB影片管理器 (v1.3.0)
 │   ├── vip-video-parser.md            # 视频解析器说明文档
@@ -34,7 +34,7 @@ SurfHelper/
 
 ## 核心组件
 
-### 1. COC阵型复制助手 (v1.1.2)
+### 1. COC阵型复制助手 (v1.1.3)
 - **文件**: `tampermonkey-scripts/coc-layout-helper.user.js`
 - **文档**: `tampermonkey-scripts/coc-layout-helper.md`
 - **功能**: Clash of Clans 阵型网站增强工具
