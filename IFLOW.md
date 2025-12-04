@@ -6,6 +6,13 @@
 - **Shell 环境**: PowerShell
 - **语言环境**: 中文用户，使用中文进行交流
 
+### Windows 平台语法注意事项
+- **命令连接符**: 使用 `;` 分隔多个命令，而非 Unix/Linux 的 `&&`
+- **路径分隔符**: 使用 `\` 而非 `/`，但 PowerShell 通常兼容两种格式
+- **字符串引用**: 优先使用双引号 `"`，单引号 `'` 用于字面量字符串
+- **命令执行**: 避免使用 Unix 特有的命令如 `ls`、`cat`，使用 PowerShell 对应命令如 `Get-ChildItem`、`Get-Content`
+- **环境变量**: 使用 `$env:VARIABLE_NAME` 格式，如 `$env:PATH`
+
 ## 🔗 相关链接
 - **GitHub仓库**: [https://github.com/RiTian96/SurfHelper](https://github.com/RiTian96/SurfHelper)
 - **Greasy Fork**: [https://greasyfork.org/zh-CN/users/332142-ritian96](https://greasyfork.org/zh-CN/users/332142-ritian96)
@@ -96,6 +103,13 @@ SurfHelper 是一个专注于提升网页浏览体验的个人工具集项目，
 
 
 ## CLI 工作流程约定
+
+### Windows 平台语法注意事项
+- **命令连接符**: 使用 `;` 分隔多个命令，而非 Unix/Linux 的 `&&`
+- **路径分隔符**: 使用 `\` 而非 `/`，但 PowerShell 通常兼容两种格式
+- **字符串引用**: 优先使用双引号 `"`，单引号 `'` 用于字面量字符串
+- **命令执行**: 避免使用 Unix 特有的命令如 `ls`、`cat`，使用 PowerShell 对应命令如 `Get-ChildItem`、`Get-Content`
+- **环境变量**: 使用 `$env:VARIABLE_NAME` 格式，如 `$env:PATH`
 
 ### 文件修改标准流程
 1. **读取** - 使用 `read_file` 工具先读取文件内容，了解当前状态
