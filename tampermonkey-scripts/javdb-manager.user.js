@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.3.0
+// @version      1.4.0
 // @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 点击想看/看過按钮自动导入番号
 // @author       RiTian96
 // @match        https://javdb.com/*
@@ -146,6 +146,15 @@
         CONFIG.currentPageType = window.location.href.includes('watched_videos') ? 'watched' : 
                                 window.location.href.includes('want_watch_videos') ? 'wanted' : null;
         
+        // 设置页面标识，供CSS使用
+        if (CONFIG.currentPageType === 'watched') {
+            document.body.setAttribute('data-page', 'watched');
+        } else if (CONFIG.currentPageType === 'wanted') {
+            document.body.setAttribute('data-page', 'wanted');
+        } else {
+            document.body.removeAttribute('data-page');
+        }
+        
         // 创建全局悬浮窗
         createGlobalFloatingWindow();
         CONFIG.panelCreated = true;
@@ -229,18 +238,50 @@
             const code = titleElement.textContent.trim();
             let shouldBlock = false;
             
-            // 检查是否在已看列表中
-            if (watchedCodes.includes(code) && CONFIG.enableWatchedBlock) {
-                item.classList.add('javdb-watched');
-                shouldBlock = true;
-                debugLog(`屏蔽已看番号: ${code}`);
+            // 根据当前页面类型决定屏蔽策略
+            // 在看过页面，只屏蔽已看的，不屏蔽想看的
+            if (CONFIG.currentPageType === 'watched') {
+                if (watchedCodes.includes(code) && CONFIG.enableWatchedBlock) {
+                    item.classList.add('javdb-watched');
+                    shouldBlock = true;
+                    debugLog(`看过页面屏蔽已看番号: ${code}`);
+                }
+                // 在看过页面，想看的影片正常显示，但添加标记以便区分
+                else if (wantedCodes.includes(code)) {
+                    item.classList.add('javdb-wanted');
+                    // 不设置shouldBlock，所以不会被屏蔽
+                    debugLog(`看过页面显示想看番号: ${code}（不屏蔽）`);
+                }
             }
-            
-            // 检查是否在想看列表中
-            if (wantedCodes.includes(code) && CONFIG.enableWantedBlock) {
-                item.classList.add('javdb-wanted');
-                shouldBlock = true;
-                debugLog(`屏蔽想看番号: ${code}`);
+            // 在想看页面，只屏蔽想看的，不屏蔽已看的
+            else if (CONFIG.currentPageType === 'wanted') {
+                if (wantedCodes.includes(code) && CONFIG.enableWantedBlock) {
+                    item.classList.add('javdb-wanted');
+                    shouldBlock = true;
+                    debugLog(`想看页面屏蔽想看番号: ${code}`);
+                }
+                // 在想看页面，已看的影片正常显示，但添加标记以便区分
+                else if (watchedCodes.includes(code)) {
+                    item.classList.add('javdb-watched');
+                    // 不设置shouldBlock，所以不会被屏蔽
+                    debugLog(`想看页面显示已看番号: ${code}（不屏蔽）`);
+                }
+            }
+            // 在其他页面，按照原来的逻辑屏蔽所有
+            else {
+                // 检查是否在已看列表中
+                if (watchedCodes.includes(code) && CONFIG.enableWatchedBlock) {
+                    item.classList.add('javdb-watched');
+                    shouldBlock = true;
+                    debugLog(`其他页面屏蔽已看番号: ${code}`);
+                }
+                
+                // 检查是否在想看列表中
+                if (wantedCodes.includes(code) && CONFIG.enableWantedBlock) {
+                    item.classList.add('javdb-wanted');
+                    shouldBlock = true;
+                    debugLog(`其他页面屏蔽想看番号: ${code}`);
+                }
             }
             
             // 如果需要屏蔽，添加屏蔽样式
@@ -400,6 +441,20 @@
             const currentUrl = window.location.href;
             if (currentUrl !== lastUrl) {
                 lastUrl = currentUrl;
+                
+                // 更新页面类型和标识
+                CONFIG.currentPageType = window.location.href.includes('watched_videos') ? 'watched' : 
+                                        window.location.href.includes('want_watch_videos') ? 'wanted' : null;
+                
+                // 设置页面标识，供CSS使用
+                if (CONFIG.currentPageType === 'watched') {
+                    document.body.setAttribute('data-page', 'watched');
+                } else if (CONFIG.currentPageType === 'wanted') {
+                    document.body.setAttribute('data-page', 'wanted');
+                } else {
+                    document.body.removeAttribute('data-page');
+                }
+                
                 setTimeout(() => {
                     applyBlockEffect();
                 }, 1000); // 页面切换后延迟应用
@@ -908,6 +963,18 @@
             .movie-list .item.javdb-watched.javdb-wanted::before {
                 content: '已看';
                 background: rgba(231, 76, 60, 0.9);
+            }
+            
+            /* 看过页面中的想看影片特殊样式 - 不屏蔽但标记为可转移到看过 */
+            body[data-page="watched"] .movie-list .item.javdb-wanted:not(.javdb-blocked) {
+                border: 2px dashed rgba(243, 156, 18, 0.6) !important;
+                background: rgba(243, 156, 18, 0.05) !important;
+            }
+            
+            /* 想看页面中的已看影片特殊样式 - 不屏蔽但标记为已看过 */
+            body[data-page="wanted"] .movie-list .item.javdb-watched:not(.javdb-blocked) {
+                border: 2px dashed rgba(231, 76, 60, 0.6) !important;
+                background: rgba(231, 76, 60, 0.05) !important;
             }
 
             /* 低分屏蔽样式（更暗更灰） */

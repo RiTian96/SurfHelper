@@ -47,7 +47,7 @@ SurfHelper/
 - **权限**: GM_addStyle, GM_setClipboard
 - **配置**: 可开启调试模式，自定义历史记录数量
 
-### 2. JavDB影片管理器 (v1.3.0)
+### 2. JavDB影片管理器 (v1.4.0)
 - **文件**: `tampermonkey-scripts/javdb-manager.user.js`
 - **文档**: `tampermonkey-scripts/javdb-manager.md`
 - **功能**: JavDB 网站影片管理工具，提供智能过滤和管理功能
@@ -59,6 +59,7 @@ SurfHelper/
   - 智能搜索和管理功能（快速添加/删除影片）
   - 可视化开关控制（可独立控制各功能模块）
   - **按钮联动**：影片详情页点击想看/看過按钮自动导入番号到本地列表
+  - **页面区分屏蔽**：看过页面不屏蔽想看影片，想看页面不屏蔽看过影片，便于状态转移
 - **支持网站**: javdb.com
 - **运行时机**: 未明确指定（默认 document-end）
 - **权限**: GM_setValue, GM_getValue, GM_deleteValue, GM_listValues
