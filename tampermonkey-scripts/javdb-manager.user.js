@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.4.0
-// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 点击想看/看過按钮自动导入番号
+// @version      1.5.0
+// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 欧美区番号支持，不区分大小写空格匹配
 // @author       RiTian96
 // @match        https://javdb.com/*
 // @icon         https://javdb.com/favicon.ico
@@ -42,6 +42,54 @@
         if (CONFIG.DEBUG) {
             console.log('[JavDB Manager]', ...args);
         }
+    }
+    
+    // 从影片项中提取番号（支持日式和欧美区）
+    function getVideoCodeFromItem(item) {
+        // 列表页面：统一使用 .video-title
+        const videoTitle = item.querySelector('.video-title');
+        if (videoTitle) {
+            const strongElement = videoTitle.querySelector('strong');
+            if (strongElement) {
+                const strongText = strongElement.textContent.trim();
+                // 判断是否为日式番号（包含 - 号）
+                if (strongText.includes('-')) {
+                    debugLog(`从 video-title strong 获取日式番号: ${strongText}`);
+                    return strongText;
+                } else {
+                    // 欧美区：使用完整 title
+                    const fullTitle = videoTitle.textContent.trim();
+                    debugLog(`从 video-title 获取欧美区完整番号: ${fullTitle}`);
+                    return fullTitle;
+                }
+            }
+        }
+
+        debugLog('无法从影片项中提取番号');
+        return null;
+    }
+    
+    // 不区分大小写和空格的匹配函数
+    function isCodeMatch(code1, code2) {
+        // 标准化：去除空格，转换为小写
+        const normalize = (str) => str.replace(/\s+/g, '').toLowerCase();
+        return normalize(code1) === normalize(code2);
+    }
+    
+    // 不区分大小写和空格的前缀匹配函数
+    function isCodePrefixMatch(prefix, fullCode) {
+        const normalize = (str) => str.replace(/\s+/g, '').toLowerCase();
+        return normalize(fullCode).startsWith(normalize(prefix));
+    }
+    
+    // 查找匹配的番号（不区分大小写和空格，支持前缀匹配）
+    function findMatchingCode(code, codeList) {
+        return codeList.find(savedCode => isCodeMatch(code, savedCode));
+    }
+    
+    // 查找前缀匹配的番号（不区分大小写和空格）
+    function findPrefixMatchingCode(prefix, codeList) {
+        return codeList.filter(savedCode => isCodePrefixMatch(prefix, savedCode));
     }
     
     // 创建开关组件
@@ -233,21 +281,22 @@
         const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
         const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
         
-        const titleElement = item.querySelector('.video-title strong');
-        if (titleElement) {
-            const code = titleElement.textContent.trim();
+        // 使用通用函数提取番号
+        const code = getVideoCodeFromItem(item);
+        
+        if (code) {
             let shouldBlock = false;
             
             // 根据当前页面类型决定屏蔽策略
             // 在看过页面，只屏蔽已看的，不屏蔽想看的
             if (CONFIG.currentPageType === 'watched') {
-                if (watchedCodes.includes(code) && CONFIG.enableWatchedBlock) {
+                if (findMatchingCode(code, watchedCodes) && CONFIG.enableWatchedBlock) {
                     item.classList.add('javdb-watched');
                     shouldBlock = true;
                     debugLog(`看过页面屏蔽已看番号: ${code}`);
                 }
                 // 在看过页面，想看的影片正常显示，但添加标记以便区分
-                else if (wantedCodes.includes(code)) {
+                else if (findMatchingCode(code, wantedCodes)) {
                     item.classList.add('javdb-wanted');
                     // 不设置shouldBlock，所以不会被屏蔽
                     debugLog(`看过页面显示想看番号: ${code}（不屏蔽）`);
@@ -255,13 +304,13 @@
             }
             // 在想看页面，只屏蔽想看的，不屏蔽已看的
             else if (CONFIG.currentPageType === 'wanted') {
-                if (wantedCodes.includes(code) && CONFIG.enableWantedBlock) {
+                if (findMatchingCode(code, wantedCodes) && CONFIG.enableWantedBlock) {
                     item.classList.add('javdb-wanted');
                     shouldBlock = true;
                     debugLog(`想看页面屏蔽想看番号: ${code}`);
                 }
                 // 在想看页面，已看的影片正常显示，但添加标记以便区分
-                else if (watchedCodes.includes(code)) {
+                else if (findMatchingCode(code, watchedCodes)) {
                     item.classList.add('javdb-watched');
                     // 不设置shouldBlock，所以不会被屏蔽
                     debugLog(`想看页面显示已看番号: ${code}（不屏蔽）`);
@@ -270,14 +319,14 @@
             // 在其他页面，按照原来的逻辑屏蔽所有
             else {
                 // 检查是否在已看列表中
-                if (watchedCodes.includes(code) && CONFIG.enableWatchedBlock) {
+                if (findMatchingCode(code, watchedCodes) && CONFIG.enableWatchedBlock) {
                     item.classList.add('javdb-watched');
                     shouldBlock = true;
                     debugLog(`其他页面屏蔽已看番号: ${code}`);
                 }
                 
                 // 检查是否在想看列表中
-                if (wantedCodes.includes(code) && CONFIG.enableWantedBlock) {
+                if (findMatchingCode(code, wantedCodes) && CONFIG.enableWantedBlock) {
                     item.classList.add('javdb-wanted');
                     shouldBlock = true;
                     debugLog(`其他页面屏蔽想看番号: ${code}`);
@@ -1549,12 +1598,10 @@
         const pageCodes = [];
 
         items.forEach(item => {
-            const titleElement = item.querySelector('.video-title strong');
-            if (titleElement) {
-                const code = titleElement.textContent.trim();
-                if (code && !pageCodes.includes(code)) {
-                    pageCodes.push(code);
-                }
+            // 使用通用函数提取番号
+            const code = getVideoCodeFromItem(item);
+            if (code && !pageCodes.includes(code)) {
+                pageCodes.push(code);
             }
         });
 
@@ -1671,12 +1718,10 @@
         const pageCodes = [];
 
         items.forEach(item => {
-            const titleElement = item.querySelector('.video-title strong');
-            if (titleElement) {
-                const code = titleElement.textContent.trim();
-                if (code && !pageCodes.includes(code)) {
-                    pageCodes.push(code);
-                }
+            // 使用通用函数提取番号
+            const code = getVideoCodeFromItem(item);
+            if (code && !pageCodes.includes(code)) {
+                pageCodes.push(code);
             }
         });
 
@@ -1708,8 +1753,8 @@
         const existingCodes = GM_getValue(storageKey, []);
         const oppositeCodes = GM_getValue(oppositeKey, []);
         
-        // 从对面列表中移除当前导入的番号
-        const newOppositeCodes = oppositeCodes.filter(code => !newCodes.includes(code));
+        // 从对面列表中移除当前导入的番号（不区分大小写和空格）
+        const newOppositeCodes = oppositeCodes.filter(code => !newCodes.some(newCode => isCodeMatch(code, newCode)));
         if (newOppositeCodes.length !== oppositeCodes.length) {
             GM_setValue(oppositeKey, newOppositeCodes);
             debugLog(`从对面列表移除了 ${oppositeCodes.length - newOppositeCodes.length} 个重复番号`);
@@ -1904,7 +1949,7 @@
         const smartInput = document.getElementById('smart-input');
         const smartResult = document.getElementById('smart-result');
         const smartActions = document.getElementById('smart-actions');
-        const code = smartInput.value.trim().toUpperCase();
+        const code = smartInput.value.trim();
 
         // 清除之前的定时器
         if (window.smartInputTimer) {
@@ -1927,19 +1972,25 @@
         let location = '';
         let candidates = [];
 
-        // 精确匹配
-        if (watchedCodes.includes(code)) {
+        // 精确匹配（不区分大小写和空格）
+        const watchedMatch = findMatchingCode(code, watchedCodes);
+        const wantedMatch = findMatchingCode(code, wantedCodes);
+        let matchedCode = null;
+        
+        if (watchedMatch) {
             found = true;
             location = '看过';
-        } else if (wantedCodes.includes(code)) {
+            matchedCode = watchedMatch;
+        } else if (wantedMatch) {
             found = true;
             location = '想看';
+            matchedCode = wantedMatch;
         }
 
-        // 查找候选匹配
+        // 查找候选匹配（不区分大小写和空格，支持前缀匹配）
         if (!found && code.length >= 1) {
             candidates = allCodes.filter(c => 
-                c.toLowerCase().includes(code.toLowerCase())
+                isCodeMatch(c, code) || isCodePrefixMatch(code, c)
             ).slice(0, 5); // 最多显示5个候选
         }
 
@@ -1949,7 +2000,8 @@
             smartResult.className = 'smart-result found';
             smartResult.innerHTML = `
                 <div style="font-weight: bold; margin-bottom: 5px;">已找到</div>
-                <div>番号: ${code}</div>
+                <div>搜索: ${code}</div>
+                <div>匹配: ${matchedCode}</div>
                 <div>位置: ${location}列表</div>
             `;
 
@@ -1961,13 +2013,13 @@
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'smart-action-button delete active javdb-delete-btn';
             deleteBtn.textContent = '删除';
-            deleteBtn.addEventListener('click', () => smartDeleteCode(code));
+            deleteBtn.addEventListener('click', () => smartDeleteCode(matchedCode));
             smartActions.appendChild(deleteBtn);
         } else if (candidates.length > 0) {
             smartResult.className = 'smart-result not-found';
             let candidatesHtml = '<div style="font-weight: bold; margin-bottom: 5px;">候选番号:</div>';
             candidates.forEach(candidate => {
-                const location = watchedCodes.includes(candidate) ? '看过' : '想看';
+                const location = findMatchingCode(candidate, watchedCodes) ? '看过' : '想看';
                 candidatesHtml += `<div style="cursor: pointer; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.1);" data-candidate="${candidate}">${candidate} (${location})</div>`;
             });
             smartResult.innerHTML = candidatesHtml;
@@ -2026,16 +2078,16 @@
         let codes = GM_getValue(storageKey, []);
         let oppositeCodes = GM_getValue(oppositeKey, []);
         
-        // 检查是否已在列表中
-        if (codes.includes(code)) {
+        // 检查是否已在列表中（不区分大小写和空格）
+        if (findMatchingCode(code, codes)) {
             showMessage(`番号 ${code} 已在${type === 'watched' ? '看过' : '想看'}列表中`, 'warning');
             return;
         }
         
-        // 检查是否在对面列表中
-        if (oppositeCodes.includes(code)) {
+        // 检查是否在对面列表中（不区分大小写和空格）
+        if (findMatchingCode(code, oppositeCodes)) {
             // 从对面列表中移除
-            oppositeCodes = oppositeCodes.filter(c => c !== code);
+            oppositeCodes = oppositeCodes.filter(c => !isCodeMatch(c, code));
             GM_setValue(oppositeKey, oppositeCodes);
             showMessage(`番号 ${code} 已从${type === 'watched' ? '想看' : '看过'}列表移除，并添加到${type === 'watched' ? '看过' : '想看'}列表`, 'info');
         } else {
@@ -2065,16 +2117,18 @@
         let deletedFrom = '';
         
         // 检查并从看过列表删除
-        if (watchedCodes.includes(code)) {
-            const newWatchedCodes = watchedCodes.filter(c => c !== code);
+        const watchedMatch = findMatchingCode(code, watchedCodes);
+        if (watchedMatch) {
+            const newWatchedCodes = watchedCodes.filter(c => !isCodeMatch(c, code));
             GM_setValue(CONFIG.watchedStorageKey, newWatchedCodes);
             deleted = true;
             deletedFrom = '看过';
         }
         
         // 检查并从想看列表删除
-        if (wantedCodes.includes(code)) {
-            const newWantedCodes = wantedCodes.filter(c => c !== code);
+        const wantedMatch = findMatchingCode(code, wantedCodes);
+        if (wantedMatch) {
+            const newWantedCodes = wantedCodes.filter(c => !isCodeMatch(c, code));
             GM_setValue(CONFIG.wantedStorageKey, newWantedCodes);
             deleted = true;
             deletedFrom += deletedFrom ? '和想看' : '想看';
@@ -2139,102 +2193,157 @@
     }
 
     // 绑定影片详情页的想看/看過按钮
-    function bindVideoDetailButtons() {
-        debugLog('绑定影片详情页按钮');
-        
-        // 获取当前影片番号
-        const videoCode = getCurrentVideoCode();
-        if (!videoCode) {
-            debugLog('无法获取当前影片番号');
-            return;
-        }
-        
-        debugLog(`当前影片番号: ${videoCode}`);
-        
-        // 绑定"想看"按钮
-        const wantButton = document.querySelector('form.button_to[action*="/reviews/want_to_watch"] button') ||
-                          Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('想看'));
-        
-        if (wantButton && !wantButton.hasAttribute('data-javdb-manager-bound')) {
-            wantButton.setAttribute('data-javdb-manager-bound', 'true');
-            wantButton.addEventListener('click', (e) => {
-                debugLog('点击了想看按钮');
-                // 延迟执行，确保网站的处理完成
-                setTimeout(() => {
-                    addVideoToList(videoCode, 'wanted');
-                }, 1000);
-            });
-            debugLog('已绑定想看按钮');
-        }
-        
-        // 绑定"看過"按钮
-        const watchedButton = document.querySelector('form.button_to[action*="/reviews/watched"] button') ||
-                            Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('看過'));
-        
-        if (watchedButton && !watchedButton.hasAttribute('data-javdb-manager-bound')) {
-            watchedButton.setAttribute('data-javdb-manager-bound', 'true');
-            watchedButton.addEventListener('click', (e) => {
-                debugLog('点击了看過按钮');
-                // 延迟执行，确保网站的处理完成
-                setTimeout(() => {
-                    addVideoToList(videoCode, 'watched');
-                }, 1000);
-            });
-            debugLog('已绑定看過按钮');
-        }
-    }
+
+        function bindVideoDetailButtons(retryCount = 0) {
+
+            debugLog('绑定影片详情页按钮');
+
     
-    // 获取当前影片番号
+
+            // 获取当前影片番号
+
+            const videoCode = getCurrentVideoCode();
+
+            if (!videoCode) {
+
+                debugLog('无法获取当前影片番号');
+
+                // 重试机制：如果获取失败，延迟重试（最多5次）
+
+                if (retryCount < 5) {
+
+                    setTimeout(() => bindVideoDetailButtons(retryCount + 1), 500);
+
+                }
+
+                return;
+
+            }
+
+    
+
+            debugLog(`当前影片番号: ${videoCode}`);
+
+    
+
+            // 绑定"想看"按钮
+
+            const wantButton = document.querySelector('form.button_to[action*="/reviews/want_to_watch"] button') ||
+
+                              Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('想看'));
+
+    
+
+            if (wantButton && !wantButton.hasAttribute('data-javdb-manager-bound')) {
+
+                wantButton.setAttribute('data-javdb-manager-bound', 'true');
+
+                wantButton.addEventListener('click', (e) => {
+
+                    debugLog('点击了想看按钮，添加到想看列表');
+
+                    addVideoToList(videoCode, 'wanted');
+
+                });
+
+                debugLog('已绑定想看按钮');
+
+            }
+
+            
+
+            // 绑定"看過"按钮
+
+            const watchedButton = document.querySelector('form.button_to[action*="/reviews/watched"] button') ||
+
+                                Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('看過'));
+
+    
+
+            if (watchedButton && !watchedButton.hasAttribute('data-javdb-manager-bound')) {
+
+                watchedButton.setAttribute('data-javdb-manager-bound', 'true');
+
+                watchedButton.addEventListener('click', (e) => {
+
+                    debugLog('点击了看過按钮，添加到看过列表');
+
+                    addVideoToList(videoCode, 'watched');
+
+                });
+
+                debugLog('已绑定看過按钮');
+
+            }
+
+            
+
+            // 绑定"刪除"按钮
+
+            const deleteButton = document.querySelector('a.button.is-danger[data-method="delete"]') ||
+
+                               Array.from(document.querySelectorAll('a.button')).find(btn => btn.textContent?.includes('刪除') || btn.textContent?.includes('删除'));
+
+    
+
+            if (deleteButton && !deleteButton.hasAttribute('data-javdb-manager-bound')) {
+
+                deleteButton.setAttribute('data-javdb-manager-bound', 'true');
+
+                deleteButton.addEventListener('click', (e) => {
+
+                    debugLog('点击了删除按钮，准备刷新页面');
+
+                    // 延迟1秒让网站先执行删除操作
+
+                    setTimeout(() => {
+
+                        debugLog('删除操作完成，刷新页面');
+
+                        window.location.reload();
+
+                    }, 1000);
+
+                });
+
+                debugLog('已绑定删除按钮');
+
+            }
+
+        }
+    
+    // 获取当前影片番号（详情页面）
     function getCurrentVideoCode() {
-        // 从页面标题获取番号（最准确）
-        const titleMatch = document.title.match(/^([A-Z0-9\-]+)/);
-        if (titleMatch) {
-            return titleMatch[1];
-        }
-        
-        // 从页面内容获取番号（h2标题）
-        const titleElement = document.querySelector('h2.title strong');
+        // 详情页面：使用 h2.title 提取番号
+        const titleElement = document.querySelector('h2.title') || document.querySelector('h2[class*="title"]');
         if (titleElement) {
-            const codeMatch = titleElement.textContent.trim().match(/^([A-Z0-9\-]+)/);
-            if (codeMatch) {
-                return codeMatch[1];
-            }
-        }
-        
-        // 从复制按钮获取番号
-        const copyButton = document.querySelector('[data-clipboard-text]');
-        if (copyButton) {
-            const clipText = copyButton.getAttribute('data-clipboard-text');
-            const codeMatch = clipText.match(/^([A-Z0-9\-]+)/);
-            if (codeMatch) {
-                return codeMatch[1];
-            }
-        }
-        
-        // 从其他可能的标题元素获取番号
-        const possibleSelectors = [
-            '.title strong',
-            '.video-title strong',
-            'h1 strong',
-            '.movie-title strong'
-        ];
-        
-        for (const selector of possibleSelectors) {
-            const element = document.querySelector(selector);
-            if (element) {
-                const codeMatch = element.textContent.trim().match(/^([A-Z0-9\-]+)/);
-                if (codeMatch) {
-                    return codeMatch[1];
+            const strongElement = titleElement.querySelector('strong');
+            if (strongElement) {
+                const strongText = strongElement.textContent.trim();
+                // 判断是否为日式番号（包含 - 号）
+                if (strongText.includes('-')) {
+                    debugLog(`从 h2.title strong 获取日式番号: ${strongText}`);
+                    return strongText;
+                } else {
+                    // 欧美区：获取完整标题（strong + current-title）
+                    let fullTitle = titleElement.textContent.trim();
+                    // 去掉日期部分（如 .26.01.31、.20.06.08）
+                    fullTitle = fullTitle.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '');
+                    // 去掉多余空格
+                    fullTitle = fullTitle.replace(/\s+/g, ' ').trim();
+                    debugLog(`从 h2.title 获取欧美区完整番号: ${fullTitle}`);
+                    return fullTitle;
                 }
             }
         }
-        
+
+        debugLog('无法从详情页面提取番号');
         return null;
     }
     
     // 添加影片到列表
     function addVideoToList(videoCode, listType) {
-        debugLog(`添加影片 ${videoCode} 到 ${listType} 列表`);
+        debugLog(`添加番号 ${videoCode} 到 ${listType} 列表`);
         
         const storageKey = listType === 'watched' ? CONFIG.watchedStorageKey : CONFIG.wantedStorageKey;
         const oppositeKey = listType === 'watched' ? CONFIG.wantedStorageKey : CONFIG.watchedStorageKey;
@@ -2243,15 +2352,15 @@
         let currentList = GM_getValue(storageKey, []);
         let oppositeList = GM_getValue(oppositeKey, []);
         
-        // 检查是否已存在
-        if (currentList.includes(videoCode)) {
+        // 检查是否已存在（不区分大小写和空格）
+        if (findMatchingCode(videoCode, currentList)) {
             showMessage(`番号 ${videoCode} 已在${listType === 'watched' ? '看过' : '想看'}列表中`, 'warning');
             return;
         }
         
-        // 从对面列表中移除（如果存在）
-        if (oppositeList.includes(videoCode)) {
-            oppositeList = oppositeList.filter(code => code !== videoCode);
+        // 从对面列表中移除（如果存在，不区分大小写和空格）
+        if (findMatchingCode(videoCode, oppositeList)) {
+            oppositeList = oppositeList.filter(code => !isCodeMatch(code, videoCode));
             GM_setValue(oppositeKey, oppositeList);
             showMessage(`番号 ${videoCode} 已从${listType === 'watched' ? '想看' : '看过'}列表移除，并添加到${listType === 'watched' ? '看过' : '想看'}列表`, 'info');
         } else {
