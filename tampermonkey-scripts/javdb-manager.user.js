@@ -1385,7 +1385,7 @@
             font-size: 13px;
             padding: 10px;
         `;
-        cleanupButton.textContent = '🧹 清理并标准化数据';
+        cleanupButton.textContent = '🧹 去重并标准化数据';
         cleanupButton.addEventListener('click', (e) => {
             e.stopPropagation();
             const result = cleanupData();
