@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.5.0
-// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 欧美区番号支持，不区分大小写空格匹配
+// @version      1.5.1
+// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 欧美区番号支持，不区分大小写空格匹配；[优化] 番号标准化存储，自动转大写去空格防重复
 // @author       RiTian96
 // @match        https://javdb.com/*
 // @icon         https://javdb.com/favicon.ico
@@ -54,13 +54,15 @@
                 const strongText = strongElement.textContent.trim();
                 // 判断是否为日式番号（包含 - 号）
                 if (strongText.includes('-')) {
-                    debugLog(`从 video-title strong 获取日式番号: ${strongText}`);
-                    return strongText;
+                    const normalizedCode = normalizeCode(strongText);
+                    debugLog(`从 video-title strong 获取日式番号: ${strongText} -> 标准化: ${normalizedCode}`);
+                    return normalizedCode;
                 } else {
                     // 欧美区：使用完整 title
                     const fullTitle = videoTitle.textContent.trim();
-                    debugLog(`从 video-title 获取欧美区完整番号: ${fullTitle}`);
-                    return fullTitle;
+                    const normalizedCode = normalizeCode(fullTitle);
+                    debugLog(`从 video-title 获取欧美区完整番号: ${fullTitle} -> 标准化: ${normalizedCode}`);
+                    return normalizedCode;
                 }
             }
         }
@@ -80,6 +82,12 @@
     function isCodePrefixMatch(prefix, fullCode) {
         const normalize = (str) => str.replace(/\s+/g, '').toLowerCase();
         return normalize(fullCode).startsWith(normalize(prefix));
+    }
+
+    // 番号标准化函数：转换为大写并去除空格
+    function normalizeCode(code) {
+        if (!code || typeof code !== 'string') return code;
+        return code.replace(/\s+/g, '').toUpperCase();
     }
     
     // 查找匹配的番号（不区分大小写和空格，支持前缀匹配）
@@ -1752,35 +1760,38 @@
         const oppositeKey = CONFIG.currentPageType === 'watched' ? CONFIG.wantedStorageKey : CONFIG.watchedStorageKey;
         const existingCodes = GM_getValue(storageKey, []);
         const oppositeCodes = GM_getValue(oppositeKey, []);
-        
+
+        // 对新番号进行标准化处理
+        const normalizedNewCodes = newCodes.map(code => normalizeCode(code));
+
         // 从对面列表中移除当前导入的番号（不区分大小写和空格）
-        const newOppositeCodes = oppositeCodes.filter(code => !newCodes.some(newCode => isCodeMatch(code, newCode)));
+        const newOppositeCodes = oppositeCodes.filter(code => !normalizedNewCodes.some(newCode => isCodeMatch(code, newCode)));
         if (newOppositeCodes.length !== oppositeCodes.length) {
             GM_setValue(oppositeKey, newOppositeCodes);
             debugLog(`从对面列表移除了 ${oppositeCodes.length - newOppositeCodes.length} 个重复番号`);
         }
-        
+
         // 合并并去重
-        const allCodes = [...new Set([...existingCodes, ...newCodes])];
-        
+        const allCodes = [...new Set([...existingCodes, ...normalizedNewCodes])];
+
         // 保存
         GM_setValue(storageKey, allCodes);
-        
+
         // 计算新增数量（不包括从对面列表移除的）
         const newCount = allCodes.length - existingCodes.length;
-        
+
         // 更新内存计数
         CONFIG.importedCount += newCount;
-        
+
         // 更新全局计数显示
         updateGlobalCount();
-        
+
         // 重新应用屏蔽效果
         setTimeout(() => {
             applyBlockEffect();
         }, 100);
-        
-        debugLog(`保存了 ${newCodes.length} 个番号，新增 ${newCount} 个，累计 ${CONFIG.importedCount} 个`);
+
+        debugLog(`保存了 ${normalizedNewCodes.length} 个番号，新增 ${newCount} 个，累计 ${CONFIG.importedCount} 个`);
     }
 
     // 保存进度
@@ -2073,35 +2084,38 @@
     function smartAddCode(code, type) {
         const storageKey = type === 'watched' ? CONFIG.watchedStorageKey : CONFIG.wantedStorageKey;
         const oppositeKey = type === 'watched' ? CONFIG.wantedStorageKey : CONFIG.watchedStorageKey;
-        
+
+        // 标准化番号
+        const normalizedCode = normalizeCode(code);
+
         // 获取当前列表
         let codes = GM_getValue(storageKey, []);
         let oppositeCodes = GM_getValue(oppositeKey, []);
-        
+
         // 检查是否已在列表中（不区分大小写和空格）
-        if (findMatchingCode(code, codes)) {
-            showMessage(`番号 ${code} 已在${type === 'watched' ? '看过' : '想看'}列表中`, 'warning');
+        if (findMatchingCode(normalizedCode, codes)) {
+            showMessage(`番号 ${normalizedCode} 已在${type === 'watched' ? '看过' : '想看'}列表中`, 'warning');
             return;
         }
-        
+
         // 检查是否在对面列表中（不区分大小写和空格）
-        if (findMatchingCode(code, oppositeCodes)) {
+        if (findMatchingCode(normalizedCode, oppositeCodes)) {
             // 从对面列表中移除
-            oppositeCodes = oppositeCodes.filter(c => !isCodeMatch(c, code));
+            oppositeCodes = oppositeCodes.filter(c => !isCodeMatch(c, normalizedCode));
             GM_setValue(oppositeKey, oppositeCodes);
-            showMessage(`番号 ${code} 已从${type === 'watched' ? '想看' : '看过'}列表移除，并添加到${type === 'watched' ? '看过' : '想看'}列表`, 'info');
+            showMessage(`番号 ${normalizedCode} 已从${type === 'watched' ? '想看' : '看过'}列表移除，并添加到${type === 'watched' ? '看过' : '想看'}列表`, 'info');
         } else {
-            showMessage(`番号 ${code} 已添加到${type === 'watched' ? '看过' : '想看'}列表`, 'success');
+            showMessage(`番号 ${normalizedCode} 已添加到${type === 'watched' ? '看过' : '想看'}列表`, 'success');
         }
-        
+
         // 添加到新列表
-        codes.push(code);
+        codes.push(normalizedCode);
         GM_setValue(storageKey, codes);
-        
+
         // 更新显示
         updateGlobalCount();
         handleSmartInput(); // 重新搜索以更新状态
-        
+
         // 重新应用屏蔽效果
         setTimeout(() => {
             applyBlockEffect();
@@ -2322,17 +2336,18 @@
                 const strongText = strongElement.textContent.trim();
                 // 判断是否为日式番号（包含 - 号）
                 if (strongText.includes('-')) {
-                    debugLog(`从 h2.title strong 获取日式番号: ${strongText}`);
-                    return strongText;
+                    const normalizedCode = normalizeCode(strongText);
+                    debugLog(`从 h2.title strong 获取日式番号: ${strongText} -> 标准化: ${normalizedCode}`);
+                    return normalizedCode;
                 } else {
                     // 欧美区：获取完整标题（strong + current-title）
                     let fullTitle = titleElement.textContent.trim();
                     // 去掉日期部分（如 .26.01.31、.20.06.08）
                     fullTitle = fullTitle.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '');
-                    // 去掉多余空格
-                    fullTitle = fullTitle.replace(/\s+/g, ' ').trim();
-                    debugLog(`从 h2.title 获取欧美区完整番号: ${fullTitle}`);
-                    return fullTitle;
+                    // 标准化处理（会自动去除空格并转大写）
+                    const normalizedCode = normalizeCode(fullTitle);
+                    debugLog(`从 h2.title 获取欧美区完整番号: ${fullTitle} -> 标准化: ${normalizedCode}`);
+                    return normalizedCode;
                 }
             }
         }
@@ -2343,43 +2358,45 @@
     
     // 添加影片到列表
     function addVideoToList(videoCode, listType) {
-        debugLog(`添加番号 ${videoCode} 到 ${listType} 列表`);
-        
+        // 标准化番号
+        const normalizedCode = normalizeCode(videoCode);
+        debugLog(`添加番号 ${videoCode} -> 标准化: ${normalizedCode} 到 ${listType} 列表`);
+
         const storageKey = listType === 'watched' ? CONFIG.watchedStorageKey : CONFIG.wantedStorageKey;
         const oppositeKey = listType === 'watched' ? CONFIG.wantedStorageKey : CONFIG.watchedStorageKey;
-        
+
         // 获取现有列表
         let currentList = GM_getValue(storageKey, []);
         let oppositeList = GM_getValue(oppositeKey, []);
-        
+
         // 检查是否已存在（不区分大小写和空格）
-        if (findMatchingCode(videoCode, currentList)) {
-            showMessage(`番号 ${videoCode} 已在${listType === 'watched' ? '看过' : '想看'}列表中`, 'warning');
+        if (findMatchingCode(normalizedCode, currentList)) {
+            showMessage(`番号 ${normalizedCode} 已在${listType === 'watched' ? '看过' : '想看'}列表中`, 'warning');
             return;
         }
-        
+
         // 从对面列表中移除（如果存在，不区分大小写和空格）
-        if (findMatchingCode(videoCode, oppositeList)) {
-            oppositeList = oppositeList.filter(code => !isCodeMatch(code, videoCode));
+        if (findMatchingCode(normalizedCode, oppositeList)) {
+            oppositeList = oppositeList.filter(code => !isCodeMatch(code, normalizedCode));
             GM_setValue(oppositeKey, oppositeList);
-            showMessage(`番号 ${videoCode} 已从${listType === 'watched' ? '想看' : '看过'}列表移除，并添加到${listType === 'watched' ? '看过' : '想看'}列表`, 'info');
+            showMessage(`番号 ${normalizedCode} 已从${listType === 'watched' ? '想看' : '看过'}列表移除，并添加到${listType === 'watched' ? '看过' : '想看'}列表`, 'info');
         } else {
-            showMessage(`番号 ${videoCode} 已添加到${listType === 'watched' ? '看过' : '想看'}列表`, 'success');
+            showMessage(`番号 ${normalizedCode} 已添加到${listType === 'watched' ? '看过' : '想看'}列表`, 'success');
         }
-        
+
         // 添加到新列表
-        currentList.push(videoCode);
+        currentList.push(normalizedCode);
         GM_setValue(storageKey, currentList);
-        
+
         // 更新UI
         updateGlobalCount();
-        
+
         // 重新应用屏蔽效果
         setTimeout(() => {
             applyBlockEffect();
         }, 100);
-        
-        debugLog(`成功添加 ${videoCode} 到 ${listType} 列表`);
+
+        debugLog(`成功添加 ${normalizedCode} 到 ${listType} 列表`);
     }
 
     // 清理函数，在页面卸载时调用
