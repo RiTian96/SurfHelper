@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.5.1
-// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 欧美区番号支持，不区分大小写空格匹配；[优化] 番号标准化存储，自动转大写去空格防重复
+// @version      1.5.2
+// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 欧美区番号支持，不区分大小写空格匹配；[优化] 番号标准化存储，自动转大写去空格防重复；[修复] 自动数据迁移，清理历史重复数据
 // @author       RiTian96
 // @match        https://javdb.com/*
 // @icon         https://javdb.com/favicon.ico
@@ -89,7 +89,70 @@
         if (!code || typeof code !== 'string') return code;
         return code.replace(/\s+/g, '').toUpperCase();
     }
-    
+
+    // 数据迁移：清理和标准化已存储的番号数据
+    function migrateExistingData() {
+        const migrationKey = 'javdb_data_migrated_v151';
+        const alreadyMigrated = localStorage.getItem(migrationKey);
+
+        if (alreadyMigrated) {
+            debugLog('数据已迁移过，跳过');
+            return;
+        }
+
+        debugLog('开始数据迁移：清理和标准化已存储的番号');
+
+        let totalBefore = 0;
+        let totalAfter = 0;
+
+        // 处理已看列表
+        const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
+        totalBefore += watchedCodes.length;
+
+        // 标准化并去重
+        const normalizedWatched = [...new Set(watchedCodes.map(code => normalizeCode(code)).filter(code => code))];
+        totalAfter += normalizedWatched.length;
+
+        if (normalizedWatched.length !== watchedCodes.length) {
+            GM_setValue(CONFIG.watchedStorageKey, normalizedWatched);
+            debugLog(`已看列表：${watchedCodes.length} -> ${normalizedWatched.length}，去除了 ${watchedCodes.length - normalizedWatched.length} 个重复/无效项`);
+        }
+
+        // 处理想看列表
+        const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
+        totalBefore += wantedCodes.length;
+
+        // 标准化并去重
+        const normalizedWanted = [...new Set(wantedCodes.map(code => normalizeCode(code)).filter(code => code))];
+        totalAfter += normalizedWanted.length;
+
+        if (normalizedWanted.length !== wantedCodes.length) {
+            GM_setValue(CONFIG.wantedStorageKey, normalizedWanted);
+            debugLog(`想看列表：${wantedCodes.length} -> ${normalizedWanted.length}，去除了 ${wantedCodes.length - normalizedWanted.length} 个重复/无效项`);
+        }
+
+        // 检查两个列表之间的重复（一个番号不能同时在已看和想看中）
+        const duplicates = normalizedWatched.filter(code => normalizedWanted.includes(code));
+        if (duplicates.length > 0) {
+            debugLog(`发现跨列表重复项：`, duplicates);
+            // 默认保留在已看列表中，从想看列表移除
+            const newWanted = normalizedWanted.filter(code => !normalizedWatched.includes(code));
+            GM_setValue(CONFIG.wantedStorageKey, newWanted);
+            debugLog(`已清理跨列表重复，从想看列表移除 ${duplicates.length} 项`);
+            totalAfter -= duplicates.length;
+        }
+
+        // 标记迁移完成
+        localStorage.setItem(migrationKey, 'true');
+
+        const removed = totalBefore - totalAfter;
+        if (removed > 0) {
+            console.log(`[JavDB Manager] 数据迁移完成：清理了 ${removed} 个重复/不规范的番号`);
+        } else {
+            debugLog('数据迁移完成：没有发现需要清理的数据');
+        }
+    }
+
     // 查找匹配的番号（不区分大小写和空格，支持前缀匹配）
     function findMatchingCode(code, codeList) {
         return codeList.find(savedCode => isCodeMatch(code, savedCode));
@@ -194,10 +257,13 @@
     // 初始化
     function init() {
         if (CONFIG.panelCreated) return;
-        
+
+        // 数据迁移：清理和标准化旧数据（只执行一次）
+        migrateExistingData();
+
         // 加载配置
         loadConfig();
-        
+
         // 确定当前页面类型
         CONFIG.currentPageType = window.location.href.includes('watched_videos') ? 'watched' : 
                                 window.location.href.includes('want_watch_videos') ? 'wanted' : null;

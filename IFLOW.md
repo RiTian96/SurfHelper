@@ -36,7 +36,7 @@ SurfHelper 是个人开发的小脚本集合，专注于提升网页浏览体验
 | 脚本名称 | 版本 | 目标网站 | 核心功能 |
 |---------|------|---------|---------|
 | **COC阵型复制助手** | 1.1.3 | `*://coc.6oh.cn/*` | 绕过付费限制提取阵型链接，大图预览，历史记录背包 |
-| **JavDB影片管理器** | 1.5.1 | `https://javdb.com/*` | 已看/想看影片屏蔽，评分高亮，批量管理，欧美区番号支持，番号标准化存储 |
+| **JavDB影片管理器** | 1.5.2 | `https://javdb.com/*` | 已看/想看影片屏蔽，评分高亮，批量管理，欧美区番号支持，番号标准化存储，自动数据迁移 |
 | **VIP视频解析器** | 1.4.2 | 多平台视频网站 | 15个解析接口集成，自动解析，接口评分系统 |
 | **微博磁链补全助手** | 1.1.1 | `*://weibo.com/*` | 智能识别40位磁力哈希值，自动补全magnet链接 |
 
@@ -188,7 +188,7 @@ SurfHelper/
     ├── coc-layout-helper.md    # COC阵型助手文档
     ├── coc-layout-helper.user.js # COC阵型助手脚本 (v1.1.3)
     ├── javdb-manager.md        # JavDB管理器文档
-    ├── javdb-manager.user.js   # JavDB管理器脚本 (v1.5.1)
+    ├── javdb-manager.user.js   # JavDB管理器脚本 (v1.5.2)
     ├── vip-video-parser.md     # VIP视频解析器文档
     ├── vip-video-parser.user.js # VIP视频解析器脚本 (v1.4.2)
     ├── weibo-magnet-linker.md  # 微博磁链助手文档
