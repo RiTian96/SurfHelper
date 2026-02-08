@@ -188,7 +188,7 @@ SurfHelper/
     ├── coc-layout-helper.md    # COC阵型助手文档
     ├── coc-layout-helper.user.js # COC阵型助手脚本 (v1.1.3)
     ├── javdb-manager.md        # JavDB管理器文档
-    ├── javdb-manager.user.js   # JavDB管理器脚本 (v1.5.0)
+    ├── javdb-manager.user.js   # JavDB管理器脚本 (v1.5.1)
     ├── vip-video-parser.md     # VIP视频解析器文档
     ├── vip-video-parser.user.js # VIP视频解析器脚本 (v1.4.2)
     ├── weibo-magnet-linker.md  # 微博磁链助手文档
