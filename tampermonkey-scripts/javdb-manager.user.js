@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.5.2
-// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 欧美区番号支持，不区分大小写空格匹配；[优化] 番号标准化存储，自动转大写去空格防重复；[修复] 自动数据迁移，清理历史重复数据
+// @version      1.5.3
+// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 欧美区番号支持，不区分大小写空格匹配；[优化] 番号标准化存储，自动转大写去空格防重复；[新增] 手动数据清理功能，管理窗口一键清理重复数据
 // @author       RiTian96
 // @match        https://javdb.com/*
 // @icon         https://javdb.com/favicon.ico
@@ -90,53 +90,51 @@
         return code.replace(/\s+/g, '').toUpperCase();
     }
 
-    // 数据迁移：清理和标准化已存储的番号数据
-    function migrateExistingData() {
-        const migrationKey = 'javdb_data_migrated_v152';
-        const alreadyMigrated = localStorage.getItem(migrationKey);
+    // 数据清理：手动执行，清理和标准化已存储的番号数据
+    function cleanupData() {
+        debugLog('开始数据清理：清理和标准化已存储的番号');
 
-        if (alreadyMigrated) {
-            debugLog('数据已迁移过，跳过');
-            return;
-        }
-
-        debugLog('开始数据迁移：清理和标准化已存储的番号');
-
-        let totalBefore = 0;
-        let totalAfter = 0;
+        const result = {
+            before: { watched: 0, wanted: 0, total: 0 },
+            after: { watched: 0, wanted: 0, total: 0 },
+            removed: { duplicates: 0, crossList: 0 },
+            changed: false
+        };
 
         // 处理已看列表
         const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
-        totalBefore += watchedCodes.length;
+        result.before.watched = watchedCodes.length;
 
         // 标准化并去重
         const normalizedWatched = [...new Set(watchedCodes.map(code => normalizeCode(code)).filter(code => code))];
-        totalAfter += normalizedWatched.length;
+        result.after.watched = normalizedWatched.length;
 
         // 检查是否有变化（长度不同或内容不同）
         const watchedChanged = normalizedWatched.length !== watchedCodes.length ||
                                JSON.stringify(normalizedWatched) !== JSON.stringify(watchedCodes);
         if (watchedChanged) {
             GM_setValue(CONFIG.watchedStorageKey, normalizedWatched);
-            const duplicatesRemoved = watchedCodes.length - normalizedWatched.length;
-            debugLog(`已看列表：${watchedCodes.length} -> ${normalizedWatched.length}，清理了 ${duplicatesRemoved} 个重复/无效项`);
+            result.removed.duplicates += watchedCodes.length - normalizedWatched.length;
+            result.changed = true;
+            debugLog(`已看列表：${watchedCodes.length} -> ${normalizedWatched.length}，清理了 ${watchedCodes.length - normalizedWatched.length} 个重复/无效项`);
         }
 
         // 处理想看列表
         const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
-        totalBefore += wantedCodes.length;
+        result.before.wanted = wantedCodes.length;
 
         // 标准化并去重
         const normalizedWanted = [...new Set(wantedCodes.map(code => normalizeCode(code)).filter(code => code))];
-        totalAfter += normalizedWanted.length;
+        result.after.wanted = normalizedWanted.length;
 
         // 检查是否有变化（长度不同或内容不同）
         const wantedChanged = normalizedWanted.length !== wantedCodes.length ||
                               JSON.stringify(normalizedWanted) !== JSON.stringify(wantedCodes);
         if (wantedChanged) {
             GM_setValue(CONFIG.wantedStorageKey, normalizedWanted);
-            const duplicatesRemoved = wantedCodes.length - normalizedWanted.length;
-            debugLog(`想看列表：${wantedCodes.length} -> ${normalizedWanted.length}，清理了 ${duplicatesRemoved} 个重复/无效项`);
+            result.removed.duplicates += wantedCodes.length - normalizedWanted.length;
+            result.changed = true;
+            debugLog(`想看列表：${wantedCodes.length} -> ${normalizedWanted.length}，清理了 ${wantedCodes.length - normalizedWanted.length} 个重复/无效项`);
         }
 
         // 检查两个列表之间的重复（一个番号不能同时在已看和想看中）
@@ -146,19 +144,23 @@
             // 默认保留在已看列表中，从想看列表移除
             const newWanted = normalizedWanted.filter(code => !normalizedWatched.includes(code));
             GM_setValue(CONFIG.wantedStorageKey, newWanted);
+            result.removed.crossList = duplicates.length;
+            result.after.wanted = newWanted.length;
+            result.changed = true;
             debugLog(`已清理跨列表重复，从想看列表移除 ${duplicates.length} 项`);
-            totalAfter -= duplicates.length;
         }
 
-        // 标记迁移完成
-        localStorage.setItem(migrationKey, 'true');
+        result.before.total = result.before.watched + result.before.wanted;
+        result.after.total = result.after.watched + result.after.wanted;
 
-        const removed = totalBefore - totalAfter;
-        if (removed > 0) {
-            console.log(`[JavDB Manager] 数据迁移完成：清理了 ${removed} 个重复/不规范的番号`);
+        const totalRemoved = result.before.total - result.after.total;
+        if (totalRemoved > 0 || result.changed) {
+            console.log(`[JavDB Manager] 数据清理完成：清理了 ${totalRemoved} 个重复/不规范的番号`);
         } else {
-            debugLog('数据迁移完成：没有发现需要清理的数据');
+            debugLog('数据清理完成：没有发现需要清理的数据');
         }
+
+        return result;
     }
 
     // 查找匹配的番号（不区分大小写和空格，支持前缀匹配）
@@ -265,9 +267,6 @@
     // 初始化
     function init() {
         if (CONFIG.panelCreated) return;
-
-        // 数据迁移：清理和标准化旧数据（只执行一次）
-        migrateExistingData();
 
         // 加载配置
         loadConfig();
@@ -1357,9 +1356,76 @@
         // 低分屏蔽开关（同时控制高分高亮）
         const scoreSwitch = createSwitch('评分功能', 'enableLowScoreBlock', CONFIG.enableLowScoreBlock);
         switchContainer.appendChild(scoreSwitch);
-        
+
         manageContent.appendChild(switchContainer);
-        
+
+        // 添加数据清理按钮
+        const cleanupContainer = document.createElement('div');
+        cleanupContainer.style.marginTop = '15px';
+        cleanupContainer.style.paddingTop = '15px';
+        cleanupContainer.style.borderTop = '1px solid rgba(255,255,255,0.2)';
+
+        const cleanupResult = document.createElement('div');
+        cleanupResult.id = 'cleanup-result';
+        cleanupResult.style.cssText = `
+            display: none;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            text-align: center;
+        `;
+
+        const cleanupButton = document.createElement('button');
+        cleanupButton.className = 'manager-button';
+        cleanupButton.style.cssText = `
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+            width: 100%;
+            font-size: 13px;
+            padding: 10px;
+        `;
+        cleanupButton.textContent = '🧹 清理并标准化数据';
+        cleanupButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const result = cleanupData();
+
+            // 显示结果
+            cleanupResult.style.display = 'block';
+            if (result.changed) {
+                const totalRemoved = result.before.total - result.after.total;
+                cleanupResult.style.background = 'rgba(39, 174, 96, 0.2)';
+                cleanupResult.style.border = '1px solid rgba(39, 174, 96, 0.5)';
+                cleanupResult.style.color = '#27ae60';
+                cleanupResult.innerHTML = `
+                    <div style="font-weight: bold; margin-bottom: 5px;">✅ 清理完成</div>
+                    <div>已看：${result.before.watched} → ${result.after.watched}</div>
+                    <div>想看：${result.before.wanted} → ${result.after.wanted}</div>
+                    <div style="margin-top: 5px; font-weight: bold;">共清理 ${totalRemoved} 个重复/不规范番号</div>
+                `;
+            } else {
+                cleanupResult.style.background = 'rgba(52, 152, 219, 0.2)';
+                cleanupResult.style.border = '1px solid rgba(52, 152, 219, 0.5)';
+                cleanupResult.style.color = '#3498db';
+                cleanupResult.innerHTML = `
+                    <div style="font-weight: bold;">✓ 数据已是最新状态</div>
+                    <div style="font-size: 11px; margin-top: 3px;">没有发现需要清理的数据</div>
+                `;
+            }
+
+            // 更新显示
+            updateGlobalCount();
+
+            // 3秒后隐藏结果
+            setTimeout(() => {
+                cleanupResult.style.display = 'none';
+            }, 5000);
+        });
+
+        cleanupContainer.appendChild(cleanupResult);
+        cleanupContainer.appendChild(cleanupButton);
+        manageContent.appendChild(cleanupContainer);
+
         // 添加调试按钮
         if (CONFIG.DEBUG) {
             const debugContainer = document.createElement('div');
