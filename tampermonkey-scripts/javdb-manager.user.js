@@ -92,7 +92,7 @@
 
     // 数据迁移：清理和标准化已存储的番号数据
     function migrateExistingData() {
-        const migrationKey = 'javdb_data_migrated_v151';
+        const migrationKey = 'javdb_data_migrated_v152';
         const alreadyMigrated = localStorage.getItem(migrationKey);
 
         if (alreadyMigrated) {
@@ -113,9 +113,13 @@
         const normalizedWatched = [...new Set(watchedCodes.map(code => normalizeCode(code)).filter(code => code))];
         totalAfter += normalizedWatched.length;
 
-        if (normalizedWatched.length !== watchedCodes.length) {
+        // 检查是否有变化（长度不同或内容不同）
+        const watchedChanged = normalizedWatched.length !== watchedCodes.length ||
+                               JSON.stringify(normalizedWatched) !== JSON.stringify(watchedCodes);
+        if (watchedChanged) {
             GM_setValue(CONFIG.watchedStorageKey, normalizedWatched);
-            debugLog(`已看列表：${watchedCodes.length} -> ${normalizedWatched.length}，去除了 ${watchedCodes.length - normalizedWatched.length} 个重复/无效项`);
+            const duplicatesRemoved = watchedCodes.length - normalizedWatched.length;
+            debugLog(`已看列表：${watchedCodes.length} -> ${normalizedWatched.length}，清理了 ${duplicatesRemoved} 个重复/无效项`);
         }
 
         // 处理想看列表
@@ -126,9 +130,13 @@
         const normalizedWanted = [...new Set(wantedCodes.map(code => normalizeCode(code)).filter(code => code))];
         totalAfter += normalizedWanted.length;
 
-        if (normalizedWanted.length !== wantedCodes.length) {
+        // 检查是否有变化（长度不同或内容不同）
+        const wantedChanged = normalizedWanted.length !== wantedCodes.length ||
+                              JSON.stringify(normalizedWanted) !== JSON.stringify(wantedCodes);
+        if (wantedChanged) {
             GM_setValue(CONFIG.wantedStorageKey, normalizedWanted);
-            debugLog(`想看列表：${wantedCodes.length} -> ${normalizedWanted.length}，去除了 ${wantedCodes.length - normalizedWanted.length} 个重复/无效项`);
+            const duplicatesRemoved = wantedCodes.length - normalizedWanted.length;
+            debugLog(`想看列表：${wantedCodes.length} -> ${normalizedWanted.length}，清理了 ${duplicatesRemoved} 个重复/无效项`);
         }
 
         // 检查两个列表之间的重复（一个番号不能同时在已看和想看中）
