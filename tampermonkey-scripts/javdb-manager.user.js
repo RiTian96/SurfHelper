@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.5.3
-// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 欧美区番号支持，不区分大小写空格匹配；[优化] 番号标准化存储，自动转大写去空格防重复；[新增] 手动数据清理功能，管理窗口一键清理重复数据
+// @version      1.5.4
+// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 欧美区番号支持，不区分大小写空格匹配；[优化] 番号标准化存储，自动转大写去空格防重复；[新增] 手动数据清理功能，管理窗口一键清理重复数据；[新增] 前缀去重功能，自动删除不完整番号
 // @author       RiTian96
 // @match        https://javdb.com/*
 // @icon         https://javdb.com/favicon.ico
@@ -90,6 +90,26 @@
         return code.replace(/\s+/g, '').toUpperCase();
     }
 
+    // 前缀去重：删除是其他番号前缀的较短番号
+    function removePrefixDuplicates(codeList) {
+        const toRemove = new Set();
+        
+        for (let i = 0; i < codeList.length; i++) {
+            for (let j = 0; j < codeList.length; j++) {
+                if (i !== j && codeList[j].startsWith(codeList[i])) {
+                    // codeList[i] 是 codeList[j] 的前缀，标记删除较短的
+                    toRemove.add(i);
+                    debugLog(`前缀去重："${codeList[i]}" 是 "${codeList[j]}" 的前缀，将删除`);
+                }
+            }
+        }
+        
+        return {
+            codes: codeList.filter((_, index) => !toRemove.has(index)),
+            removed: toRemove.size
+        };
+    }
+
     // 数据清理：手动执行，清理和标准化已存储的番号数据
     function cleanupData() {
         debugLog('开始数据清理：清理和标准化已存储的番号');
@@ -97,7 +117,8 @@
         const result = {
             before: { watched: 0, wanted: 0, total: 0 },
             after: { watched: 0, wanted: 0, total: 0 },
-            removed: { duplicates: 0, crossList: 0 },
+            removed: { duplicates: 0, crossList: 0, prefix: 0 },
+            details: { watchedPrefix: [], wantedPrefix: [] },
             changed: false
         };
 
@@ -106,17 +127,30 @@
         result.before.watched = watchedCodes.length;
 
         // 标准化并去重
-        const normalizedWatched = [...new Set(watchedCodes.map(code => normalizeCode(code)).filter(code => code))];
-        result.after.watched = normalizedWatched.length;
+        let processedWatched = [...new Set(watchedCodes.map(code => normalizeCode(code)).filter(code => code))];
+        result.removed.duplicates += watchedCodes.length - processedWatched.length;
 
-        // 检查是否有变化（长度不同或内容不同）
-        const watchedChanged = normalizedWatched.length !== watchedCodes.length ||
-                               JSON.stringify(normalizedWatched) !== JSON.stringify(watchedCodes);
+        // 前缀去重
+        const prefixResultWatched = removePrefixDuplicates(processedWatched);
+        if (prefixResultWatched.removed > 0) {
+            result.details.watchedPrefix = processedWatched.filter((_, i) => {
+                const afterCodes = prefixResultWatched.codes;
+                const code = processedWatched[i];
+                return !afterCodes.includes(code);
+            });
+        }
+        processedWatched = prefixResultWatched.codes;
+        result.removed.prefix += prefixResultWatched.removed;
+
+        result.after.watched = processedWatched.length;
+
+        // 检查是否有变化
+        const watchedChanged = processedWatched.length !== watchedCodes.length ||
+                               JSON.stringify(processedWatched) !== JSON.stringify(watchedCodes);
         if (watchedChanged) {
-            GM_setValue(CONFIG.watchedStorageKey, normalizedWatched);
-            result.removed.duplicates += watchedCodes.length - normalizedWatched.length;
+            GM_setValue(CONFIG.watchedStorageKey, processedWatched);
             result.changed = true;
-            debugLog(`已看列表：${watchedCodes.length} -> ${normalizedWatched.length}，清理了 ${watchedCodes.length - normalizedWatched.length} 个重复/无效项`);
+            debugLog(`已看列表：${watchedCodes.length} -> ${processedWatched.length}，清理了 ${watchedCodes.length - processedWatched.length} 项`);
         }
 
         // 处理想看列表
@@ -124,25 +158,38 @@
         result.before.wanted = wantedCodes.length;
 
         // 标准化并去重
-        const normalizedWanted = [...new Set(wantedCodes.map(code => normalizeCode(code)).filter(code => code))];
-        result.after.wanted = normalizedWanted.length;
+        let processedWanted = [...new Set(wantedCodes.map(code => normalizeCode(code)).filter(code => code))];
+        result.removed.duplicates += wantedCodes.length - processedWanted.length;
 
-        // 检查是否有变化（长度不同或内容不同）
-        const wantedChanged = normalizedWanted.length !== wantedCodes.length ||
-                              JSON.stringify(normalizedWanted) !== JSON.stringify(wantedCodes);
+        // 前缀去重
+        const prefixResultWanted = removePrefixDuplicates(processedWanted);
+        if (prefixResultWanted.removed > 0) {
+            result.details.wantedPrefix = processedWanted.filter((_, i) => {
+                const afterCodes = prefixResultWanted.codes;
+                const code = processedWanted[i];
+                return !afterCodes.includes(code);
+            });
+        }
+        processedWanted = prefixResultWanted.codes;
+        result.removed.prefix += prefixResultWanted.removed;
+
+        result.after.wanted = processedWanted.length;
+
+        // 检查是否有变化
+        const wantedChanged = processedWanted.length !== wantedCodes.length ||
+                              JSON.stringify(processedWanted) !== JSON.stringify(wantedCodes);
         if (wantedChanged) {
-            GM_setValue(CONFIG.wantedStorageKey, normalizedWanted);
-            result.removed.duplicates += wantedCodes.length - normalizedWanted.length;
+            GM_setValue(CONFIG.wantedStorageKey, processedWanted);
             result.changed = true;
-            debugLog(`想看列表：${wantedCodes.length} -> ${normalizedWanted.length}，清理了 ${wantedCodes.length - normalizedWanted.length} 个重复/无效项`);
+            debugLog(`想看列表：${wantedCodes.length} -> ${processedWanted.length}，清理了 ${wantedCodes.length - processedWanted.length} 项`);
         }
 
         // 检查两个列表之间的重复（一个番号不能同时在已看和想看中）
-        const duplicates = normalizedWatched.filter(code => normalizedWanted.includes(code));
+        const duplicates = processedWatched.filter(code => processedWanted.includes(code));
         if (duplicates.length > 0) {
             debugLog(`发现跨列表重复项：`, duplicates);
             // 默认保留在已看列表中，从想看列表移除
-            const newWanted = normalizedWanted.filter(code => !normalizedWatched.includes(code));
+            const newWanted = processedWanted.filter(code => !processedWatched.includes(code));
             GM_setValue(CONFIG.wantedStorageKey, newWanted);
             result.removed.crossList = duplicates.length;
             result.after.wanted = newWanted.length;
@@ -155,7 +202,11 @@
 
         const totalRemoved = result.before.total - result.after.total;
         if (totalRemoved > 0 || result.changed) {
-            console.log(`[JavDB Manager] 数据清理完成：清理了 ${totalRemoved} 个重复/不规范的番号`);
+            console.log(`[JavDB Manager] 数据清理完成：
+- 重复/无效：${result.removed.duplicates}
+- 前缀去重：${result.removed.prefix}
+- 跨列表重复：${result.removed.crossList}
+- 总计清理：${totalRemoved} 个番号`);
         } else {
             debugLog('数据清理完成：没有发现需要清理的数据');
         }
@@ -1397,16 +1448,42 @@
                 cleanupResult.style.background = 'rgba(39, 174, 96, 0.2)';
                 cleanupResult.style.border = '1px solid rgba(39, 174, 96, 0.5)';
                 cleanupResult.style.color = '#27ae60';
+                cleanupResult.style.textAlign = 'left';
+                
+                // 构建详情信息
+                let detailsHtml = '';
+                if (result.removed.duplicates > 0) {
+                    detailsHtml += `<div>• 重复/无效：${result.removed.duplicates} 个</div>`;
+                }
+                if (result.removed.prefix > 0) {
+                    detailsHtml += `<div>• 前缀去重：${result.removed.prefix} 个</div>`;
+                    if (result.details.watchedPrefix.length > 0) {
+                        detailsHtml += `<div style="margin-left: 10px; font-size: 11px; color: rgba(255,255,255,0.7);">已看移除：${result.details.watchedPrefix.slice(0, 5).join(', ')}${result.details.watchedPrefix.length > 5 ? '...' : ''}</div>`;
+                    }
+                    if (result.details.wantedPrefix.length > 0) {
+                        detailsHtml += `<div style="margin-left: 10px; font-size: 11px; color: rgba(255,255,255,0.7);">想看移除：${result.details.wantedPrefix.slice(0, 5).join(', ')}${result.details.wantedPrefix.length > 5 ? '...' : ''}</div>`;
+                    }
+                }
+                if (result.removed.crossList > 0) {
+                    detailsHtml += `<div>• 跨列表重复：${result.removed.crossList} 个</div>`;
+                }
+                
                 cleanupResult.innerHTML = `
-                    <div style="font-weight: bold; margin-bottom: 5px;">✅ 清理完成</div>
-                    <div>已看：${result.before.watched} → ${result.after.watched}</div>
-                    <div>想看：${result.before.wanted} → ${result.after.wanted}</div>
-                    <div style="margin-top: 5px; font-weight: bold;">共清理 ${totalRemoved} 个重复/不规范番号</div>
+                    <div style="font-weight: bold; margin-bottom: 8px; text-align: center;">✅ 清理完成</div>
+                    <div style="display: flex; justify-content: space-around; margin-bottom: 8px; text-align: center;">
+                        <div>已看：${result.before.watched} → ${result.after.watched}</div>
+                        <div>想看：${result.before.wanted} → ${result.after.wanted}</div>
+                    </div>
+                    <div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">
+                        ${detailsHtml}
+                    </div>
+                    <div style="margin-top: 8px; font-weight: bold; text-align: center;">共清理 ${totalRemoved} 个番号</div>
                 `;
             } else {
                 cleanupResult.style.background = 'rgba(52, 152, 219, 0.2)';
                 cleanupResult.style.border = '1px solid rgba(52, 152, 219, 0.5)';
                 cleanupResult.style.color = '#3498db';
+                cleanupResult.style.textAlign = 'center';
                 cleanupResult.innerHTML = `
                     <div style="font-weight: bold;">✓ 数据已是最新状态</div>
                     <div style="font-size: 11px; margin-top: 3px;">没有发现需要清理的数据</div>
@@ -1415,11 +1492,6 @@
 
             // 更新显示
             updateGlobalCount();
-
-            // 3秒后隐藏结果
-            setTimeout(() => {
-                cleanupResult.style.display = 'none';
-            }, 5000);
         });
 
         cleanupContainer.appendChild(cleanupResult);
