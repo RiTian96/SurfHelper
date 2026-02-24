@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.5.4
-// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 欧美区番号支持，不区分大小写空格匹配；[优化] 番号标准化存储，自动转大写去空格防重复；[新增] 手动数据清理功能，管理窗口一键清理重复数据；[新增] 前缀去重功能，自动删除不完整番号
+// @version      1.6.0
+// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 欧美区番号支持，不区分大小写空格匹配；[优化] 番号标准化存储，自动转大写去空格防重复；[新增] 手动数据清理功能，管理窗口一键清理重复数据；[新增] 前缀去重功能，自动删除不完整番号；[新增] 鼠标悬停大图预览，智能避让自适应
 // @author       RiTian96
 // @match        https://javdb.com/*
 // @icon         https://javdb.com/favicon.ico
@@ -339,6 +339,9 @@
         createGlobalFloatingWindow();
         CONFIG.panelCreated = true;
         
+        // 初始化大图预览组件
+        initMagicLens();
+        
         // 应用屏蔽效果
         applyBlockEffect();
         
@@ -645,6 +648,115 @@
         urlObserver.observe(document.body, {
             childList: true,
             subtree: true
+        });
+    }
+
+    /**
+     * =================================================================
+     * 大图预览组件 (Magic Lens)
+     * =================================================================
+     */
+    
+    // 大图预览状态
+    const LensState = {
+        isVisible: false,
+        currentSrc: null
+    };
+
+    // 初始化大图预览组件
+    function initMagicLens() {
+        // 创建透镜容器
+        const lens = document.createElement('div');
+        lens.id = 'javdb-magic-lens';
+        lens.innerHTML = '<img id="javdb-lens-img" src="">';
+        document.body.appendChild(lens);
+
+        // 绑定事件
+        bindMagicLensEvents();
+        
+        debugLog('大图预览组件初始化完成');
+    }
+
+    // 绑定大图预览事件
+    function bindMagicLensEvents() {
+        // 鼠标悬停显示大图
+        document.body.addEventListener('mouseover', function(e) {
+            const item = e.target.closest('.movie-list .item');
+            if (item) {
+                const lens = document.getElementById('javdb-magic-lens');
+                const lensImg = document.getElementById('javdb-lens-img');
+                
+                if (!lens || !lensImg) return;
+
+                // 获取封面图片
+                const coverImg = item.querySelector('.cover img');
+                if (!coverImg) return;
+
+                let imgSrc = coverImg.src;
+                
+                // 尝试获取更大的图片：JavDB 图片 URL 规则
+                // 缩略图格式: https://c0.jdbstatic.com/covers/xx/XXXXXXX.jpg
+                // 大图格式: https://c0.jdbstatic.com/covers/xx/XXXXXXX.jpg (相同)
+                // 但有些情况可能有 thumbs/ 目录，需要替换
+                if (imgSrc) {
+                    // 移除可能存在的 thumbs 路径
+                    imgSrc = imgSrc.replace('/thumbs/', '/');
+                }
+
+                if (imgSrc && imgSrc.trim() && imgSrc !== LensState.currentSrc) {
+                    LensState.isVisible = true;
+                    LensState.currentSrc = imgSrc;
+                    lens.style.display = 'flex';
+
+                    lensImg.style.opacity = '0';
+                    lensImg.src = imgSrc;
+                    lensImg.onload = () => { 
+                        if (lensImg) lensImg.style.opacity = '1'; 
+                    };
+                    lensImg.onerror = () => {
+                        debugLog("封面图片加载失败:", imgSrc);
+                        lens.style.display = 'none';
+                        LensState.isVisible = false;
+                    };
+                } else if (imgSrc && imgSrc.trim()) {
+                    // 同一张图片，直接显示
+                    LensState.isVisible = true;
+                    lens.style.display = 'flex';
+                }
+            }
+        });
+
+        // 鼠标移出隐藏大图
+        document.body.addEventListener('mouseout', function(e) {
+            const item = e.target.closest('.movie-list .item');
+            const related = e.relatedTarget;
+            const lens = document.getElementById('javdb-magic-lens');
+            
+            if (item && (!related || !item.contains(related))) {
+                LensState.isVisible = false;
+                if (lens) lens.style.display = 'none';
+            }
+        });
+
+        // 智能避让：根据鼠标位置决定大图显示在左边还是右边
+        document.addEventListener('mousemove', function(e) {
+            if (!LensState.isVisible) return;
+
+            const lens = document.getElementById('javdb-magic-lens');
+            if (!lens) return;
+            
+            const screenWidth = window.innerWidth;
+            const mouseX = e.clientX;
+            const margin = 30;
+
+            // 鼠标在左半屏 -> 图显示在右半屏；反之亦然
+            if (mouseX < screenWidth / 2) {
+                lens.style.left = 'auto';
+                lens.style.right = `${margin}px`;
+            } else {
+                lens.style.right = 'auto';
+                lens.style.left = `${margin}px`;
+            }
         });
     }
 
@@ -1081,6 +1193,56 @@
 
             input:checked + .slider:hover {
                 background-color: #2980b9;
+            }
+
+            /* --- [组件] 智能巨型透镜 (Magic Lens) - 大图预览 --- */
+            #javdb-magic-lens {
+                position: fixed;
+                top: 50%;
+                transform: translateY(-50%);
+
+                /* 自适应逻辑：取消固定宽高，改用最大限制 */
+                width: auto;
+                height: auto;
+                max-width: 45vw;  /* 限制宽度不超过屏幕45% */
+                max-height: 85vh; /* 限制高度不超过屏幕85% */
+
+                background: rgba(0, 0, 0, 0.95);
+                border: 2px solid #555;
+                border-radius: 12px;
+                box-shadow: 0 30px 100px rgba(0,0,0,0.9);
+                z-index: 2147483647; /* 使用最高z-index确保在最上层 */
+
+                /* 布局居中 */
+                display: none;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+
+                pointer-events: none; /* 鼠标穿透 */
+                backdrop-filter: blur(5px);
+                transition: opacity 0.2s;
+                will-change: opacity;
+            }
+
+            #javdb-magic-lens img {
+                display: block;
+                max-width: 100%;
+                max-height: 80vh;
+                object-fit: contain;
+                opacity: 0;
+                transition: opacity 0.3s ease;
+                user-select: none;
+                -webkit-user-drag: none;
+            }
+
+            /* 加载提示 */
+            #javdb-magic-lens::after {
+                content: "高清封面读取中...";
+                position: absolute;
+                color: #888; font-size: 12px; letter-spacing: 1px;
+                z-index: 1;
+                pointer-events: none;
             }
 
             /* 屏蔽效果样式（已看想看） - 只暗淡不变灰 */
