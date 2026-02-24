@@ -13,9 +13,9 @@ SurfHelper 是个人开发的小脚本集合，专注于提升网页浏览体验
 
 | 脚本名称 | 功能简介 | 文档链接 | 安装链接 |
 |---------|---------|---------|---------|
-| **COC阵型复制助手** | 绕过付费限制，一键复制阵型链接，支持大图预览和历史记录 | [📖 文档](tampermonkey-scripts/coc-layout-helper.md) | [🔧 安装](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/coc-layout-helper.user.js) |
-| **JavDB影片管理器** | 智能屏蔽已看/想看影片，评分高亮，批量导入管理，欧美区番号支持，番号标准化存储，手动数据去重，大图预览 | [📖 文档](tampermonkey-scripts/javdb-manager.md) | [🔧 安装](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/javdb-manager.user.js) |
-| **VIP视频解析器** | 多平台视频解析，集成15个解析接口，极简界面设计 | [📖 文档](tampermonkey-scripts/vip-video-parser.md) | [🔧 安装](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/vip-video-parser.user.js) |
+| **COC阵型复制助手** | 绕过付费限制，一键复制阵型链接，支持大图预览、历史记录和扫码直连 | [📖 文档](tampermonkey-scripts/coc-layout-helper.md) | [🔧 安装](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/coc-layout-helper.user.js) |
+| **JavDB影片管理器** | 智能屏蔽已看/想看影片，评分高亮，批量导入管理，欧美区番号支持，番号标准化存储，手动数据去重，前缀去重，大图预览 | [📖 文档](tampermonkey-scripts/javdb-manager.md) | [🔧 安装](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/javdb-manager.user.js) |
+| **VIP视频解析器** | 多平台视频解析，集成15个解析接口，剧集自动切换，接口评分系统 | [📖 文档](tampermonkey-scripts/vip-video-parser.md) | [🔧 安装](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/vip-video-parser.user.js) |
 | **微博磁链补全助手** | 自动识别并补全微博中的磁力链接 | [📖 文档](tampermonkey-scripts/weibo-magnet-linker.md) | [🔧 安装](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/weibo-magnet-linker.user.js) |
 
 ## 🐛 问题反馈
