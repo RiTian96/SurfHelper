@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.6.0
-// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 欧美区番号支持，不区分大小写空格匹配；[优化] 番号标准化存储，自动转大写去空格防重复；[新增] 手动数据清理功能，管理窗口一键清理重复数据；[新增] 前缀去重功能，自动删除不完整番号；[新增] 鼠标悬停大图预览，智能避让自适应
+// @version      1.7.0
+// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 欧美区番号支持，不区分大小写空格匹配；[优化] 番号标准化存储，自动转大写去空格防重复；[新增] 手动数据清理功能，管理窗口一键清理重复数据；[新增] 前缀去重功能，自动删除不完整番号；[新增] 鼠标悬停大图预览，智能避让自适应；[新增] 数据导入导出功能，备份恢复番号数据
 // @author       RiTian96
 // @match        https://javdb.com/*
 // @icon         https://javdb.com/favicon.ico
@@ -142,6 +142,9 @@
         processedWatched = prefixResultWatched.codes;
         result.removed.prefix += prefixResultWatched.removed;
 
+        // 排序
+        processedWatched = processedWatched.sort();
+
         result.after.watched = processedWatched.length;
 
         // 检查是否有变化
@@ -173,6 +176,9 @@
         processedWanted = prefixResultWanted.codes;
         result.removed.prefix += prefixResultWanted.removed;
 
+        // 排序
+        processedWanted = processedWanted.sort();
+
         result.after.wanted = processedWanted.length;
 
         // 检查是否有变化
@@ -189,7 +195,7 @@
         if (duplicates.length > 0) {
             debugLog(`发现跨列表重复项：`, duplicates);
             // 默认保留在已看列表中，从想看列表移除
-            const newWanted = processedWanted.filter(code => !processedWatched.includes(code));
+            const newWanted = processedWanted.filter(code => !processedWatched.includes(code)).sort();
             GM_setValue(CONFIG.wantedStorageKey, newWanted);
             result.removed.crossList = duplicates.length;
             result.after.wanted = newWanted.length;
@@ -1660,6 +1666,92 @@
         cleanupContainer.appendChild(cleanupButton);
         manageContent.appendChild(cleanupContainer);
 
+        // === 数据导入导出功能 ===
+        const ioContainer = document.createElement('div');
+        ioContainer.style.cssText = `
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255,255,255,0.2);
+        `;
+
+        const ioTitle = document.createElement('div');
+        ioTitle.style.cssText = `
+            font-size: 13px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #3498db;
+            text-align: center;
+        `;
+        ioTitle.textContent = '📥 数据备份';
+
+        // 导入结果提示区域
+        const ioResult = document.createElement('div');
+        ioResult.id = 'io-result';
+        ioResult.style.cssText = `
+            display: none;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            text-align: left;
+        `;
+
+        // 按钮容器
+        const ioButtons = document.createElement('div');
+        ioButtons.style.cssText = `
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        `;
+
+        // 导出按钮
+        const exportBtn = document.createElement('button');
+        exportBtn.className = 'manager-button';
+        exportBtn.style.cssText = `
+            background: linear-gradient(135deg, #27ae60, #2ecc71);
+            color: white;
+            flex: 1;
+        `;
+        exportBtn.textContent = '📤 导出数据';
+        exportBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            exportData();
+        });
+
+        // 导入按钮
+        const importBtn = document.createElement('button');
+        importBtn.className = 'manager-button';
+        importBtn.style.cssText = `
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            flex: 1;
+        `;
+        importBtn.textContent = '📥 导入数据';
+        importBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            triggerFileImport();
+        });
+
+        // 隐藏的文件输入框
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.id = 'javdb-file-input';
+        fileInput.accept = '.json';
+        fileInput.style.display = 'none';
+        fileInput.addEventListener('change', (e) => {
+            handleFileImport(e.target.files[0]);
+            fileInput.value = ''; // 重置以允许重复选择同一文件
+        });
+
+        ioButtons.appendChild(exportBtn);
+        ioButtons.appendChild(importBtn);
+        ioButtons.appendChild(fileInput);
+
+        ioContainer.appendChild(ioTitle);
+        ioContainer.appendChild(ioResult);
+        ioContainer.appendChild(ioButtons);
+        manageContent.appendChild(ioContainer);
+
         // 添加调试按钮
         if (CONFIG.DEBUG) {
             const debugContainer = document.createElement('div');
@@ -2141,12 +2233,12 @@
         // 从对面列表中移除当前导入的番号（不区分大小写和空格）
         const newOppositeCodes = oppositeCodes.filter(code => !normalizedNewCodes.some(newCode => isCodeMatch(code, newCode)));
         if (newOppositeCodes.length !== oppositeCodes.length) {
-            GM_setValue(oppositeKey, newOppositeCodes);
+            GM_setValue(oppositeKey, newOppositeCodes.sort());
             debugLog(`从对面列表移除了 ${oppositeCodes.length - newOppositeCodes.length} 个重复番号`);
         }
 
-        // 合并并去重
-        const allCodes = [...new Set([...existingCodes, ...normalizedNewCodes])];
+        // 合并、去重并排序
+        const allCodes = [...new Set([...existingCodes, ...normalizedNewCodes])].sort();
 
         // 保存
         GM_setValue(storageKey, allCodes);
@@ -2474,17 +2566,17 @@
 
         // 检查是否在对面列表中（不区分大小写和空格）
         if (findMatchingCode(normalizedCode, oppositeCodes)) {
-            // 从对面列表中移除
-            oppositeCodes = oppositeCodes.filter(c => !isCodeMatch(c, normalizedCode));
+            // 从对面列表中移除并排序
+            oppositeCodes = oppositeCodes.filter(c => !isCodeMatch(c, normalizedCode)).sort();
             GM_setValue(oppositeKey, oppositeCodes);
             showMessage(`番号 ${normalizedCode} 已从${type === 'watched' ? '想看' : '看过'}列表移除，并添加到${type === 'watched' ? '看过' : '想看'}列表`, 'info');
         } else {
             showMessage(`番号 ${normalizedCode} 已添加到${type === 'watched' ? '看过' : '想看'}列表`, 'success');
         }
 
-        // 添加到新列表
+        // 添加到新列表并排序
         codes.push(normalizedCode);
-        GM_setValue(storageKey, codes);
+        GM_setValue(storageKey, codes.sort());
 
         // 更新显示
         updateGlobalCount();
@@ -2507,7 +2599,7 @@
         // 检查并从看过列表删除
         const watchedMatch = findMatchingCode(code, watchedCodes);
         if (watchedMatch) {
-            const newWatchedCodes = watchedCodes.filter(c => !isCodeMatch(c, code));
+            const newWatchedCodes = watchedCodes.filter(c => !isCodeMatch(c, code)).sort();
             GM_setValue(CONFIG.watchedStorageKey, newWatchedCodes);
             deleted = true;
             deletedFrom = '看过';
@@ -2516,7 +2608,7 @@
         // 检查并从想看列表删除
         const wantedMatch = findMatchingCode(code, wantedCodes);
         if (wantedMatch) {
-            const newWantedCodes = wantedCodes.filter(c => !isCodeMatch(c, code));
+            const newWantedCodes = wantedCodes.filter(c => !isCodeMatch(c, code)).sort();
             GM_setValue(CONFIG.wantedStorageKey, newWantedCodes);
             deleted = true;
             deletedFrom += deletedFrom ? '和想看' : '想看';
@@ -2578,6 +2670,420 @@
                 messageDiv.parentNode.removeChild(messageDiv);
             }
         }, 2000);
+    }
+
+    // === 数据导入导出功能实现 ===
+
+    // 导出数据到本地JSON文件
+    function exportData() {
+        const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
+        const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
+        
+        // 按字母数字顺序排序
+        const sortedWatched = [...watchedCodes].sort();
+        const sortedWanted = [...wantedCodes].sort();
+        
+        const exportData = {
+            version: '1.0',
+            exportDate: new Date().toISOString().split('T')[0],
+            exportTime: new Date().toISOString(),
+            source: 'JavDB影片管理器',
+            watched: sortedWatched,
+            wanted: sortedWanted,
+            stats: {
+                watchedCount: sortedWatched.length,
+                wantedCount: sortedWanted.length,
+                totalCount: sortedWatched.length + sortedWanted.length
+            }
+        };
+        
+        const jsonString = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        
+        const fileName = `javdb_backup_${new Date().toISOString().split('T')[0]}.json`;
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showMessage(`已导出 ${exportData.stats.totalCount} 个番号到 ${fileName}`, 'success');
+        debugLog(`数据导出成功: ${fileName}`, exportData.stats);
+    }
+
+    // 触发文件选择对话框
+    function triggerFileImport() {
+        const fileInput = document.getElementById('javdb-file-input');
+        if (fileInput) {
+            fileInput.click();
+        }
+    }
+
+    // 处理文件导入
+    function handleFileImport(file) {
+        if (!file) {
+            showMessage('未选择文件', 'error');
+            return;
+        }
+        
+        if (!file.name.endsWith('.json')) {
+            showMessage('请选择 JSON 格式的文件', 'error');
+            return;
+        }
+        
+        const reader = new FileReader();
+        
+        reader.onload = (e) => {
+            try {
+                const importedData = JSON.parse(e.target.result);
+                
+                // 验证数据格式
+                if (!validateImportData(importedData)) {
+                    showMessage('文件格式不正确，请选择有效的备份文件', 'error');
+                    return;
+                }
+                
+                // 显示导入选项对话框
+                showImportDialog(importedData);
+                
+            } catch (error) {
+                showMessage('文件解析失败，请确保是有效的 JSON 文件', 'error');
+                debugLog('导入解析错误:', error);
+            }
+        };
+        
+        reader.onerror = () => {
+            showMessage('文件读取失败', 'error');
+        };
+        
+        reader.readAsText(file);
+    }
+
+    // 验证导入数据格式
+    function validateImportData(data) {
+        if (!data || typeof data !== 'object') return false;
+        if (!Array.isArray(data.watched) && !Array.isArray(data.wanted)) return false;
+        // 至少需要一个列表
+        return true;
+    }
+
+    // 显示导入选项对话框
+    function showImportDialog(importedData) {
+        // 移除已存在的对话框
+        const existingDialog = document.getElementById('javdb-import-dialog');
+        if (existingDialog) {
+            existingDialog.remove();
+        }
+        
+        const dialog = document.createElement('div');
+        dialog.id = 'javdb-import-dialog';
+        dialog.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(44, 62, 80, 0.98);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            z-index: 10003;
+            font-family: Arial, sans-serif;
+            min-width: 320px;
+            max-width: 90vw;
+            border: 1px solid rgba(255,255,255,0.15);
+        `;
+        
+        // 获取当前数据统计
+        const currentWatched = GM_getValue(CONFIG.watchedStorageKey, []);
+        const currentWanted = GM_getValue(CONFIG.wantedStorageKey, []);
+        
+        // 标题
+        const title = document.createElement('div');
+        title.style.cssText = `
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-align: center;
+            color: #3498db;
+        `;
+        title.textContent = '📥 导入数据预览';
+        
+        // 数据预览
+        const preview = document.createElement('div');
+        preview.style.cssText = `
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+            font-size: 12px;
+        `;
+        
+        const importWatched = importedData.watched || [];
+        const importWanted = importedData.wanted || [];
+        const importDate = importedData.exportDate || '未知';
+        
+        preview.innerHTML = `
+            <div style="margin-bottom: 8px; color: #888;">备份日期: ${importDate}</div>
+            <div style="display: flex; gap: 20px; justify-content: center;">
+                <div style="text-align: center;">
+                    <div style="font-size: 11px; color: #888;">已看</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #e74c3c;">${importWatched.length}</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 11px; color: #888;">想看</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #f39c12;">${importWanted.length}</div>
+                </div>
+            </div>
+            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1); text-align: center; color: #888;">
+                当前数据: 已看 ${currentWatched.length} | 想看 ${currentWanted.length}
+            </div>
+        `;
+        
+        // 导入模式选项
+        const modeContainer = document.createElement('div');
+        modeContainer.style.cssText = `
+            margin-bottom: 15px;
+        `;
+        
+        const modeTitle = document.createElement('div');
+        modeTitle.style.cssText = `
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 8px;
+        `;
+        modeTitle.textContent = '导入模式:';
+        
+        const modeOptions = document.createElement('div');
+        modeOptions.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        `;
+        
+        // 合并模式
+        const mergeOption = document.createElement('label');
+        mergeOption.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            padding: 8px;
+            background: rgba(52, 152, 219, 0.2);
+            border-radius: 6px;
+            border: 1px solid rgba(52, 152, 219, 0.5);
+        `;
+        mergeOption.innerHTML = `
+            <input type="radio" name="import-mode" value="merge" checked>
+            <div>
+                <div style="font-weight: bold;">合并数据</div>
+                <div style="font-size: 11px; color: #888;">将导入数据与现有数据合并，自动去重</div>
+            </div>
+        `;
+        
+        // 覆盖模式
+        const overwriteOption = document.createElement('label');
+        overwriteOption.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            padding: 8px;
+            background: rgba(231, 76, 60, 0.2);
+            border-radius: 6px;
+            border: 1px solid rgba(231, 76, 60, 0.5);
+        `;
+        overwriteOption.innerHTML = `
+            <input type="radio" name="import-mode" value="overwrite">
+            <div>
+                <div style="font-weight: bold;">覆盖数据</div>
+                <div style="font-size: 11px; color: #888;">⚠️ 清空现有数据，使用导入数据替换</div>
+            </div>
+        `;
+        
+        modeOptions.appendChild(mergeOption);
+        modeOptions.appendChild(overwriteOption);
+        modeContainer.appendChild(modeTitle);
+        modeContainer.appendChild(modeOptions);
+        
+        // 按钮区域
+        const buttons = document.createElement('div');
+        buttons.style.cssText = `
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        `;
+        
+        const confirmBtn = document.createElement('button');
+        confirmBtn.style.cssText = `
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            background: linear-gradient(135deg, #27ae60, #2ecc71);
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+        `;
+        confirmBtn.textContent = '确认导入';
+        confirmBtn.addEventListener('click', () => {
+            const mode = document.querySelector('input[name="import-mode"]:checked').value;
+            executeImport(importedData, mode);
+            dialog.remove();
+        });
+        
+        const cancelBtn = document.createElement('button');
+        cancelBtn.style.cssText = `
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+        `;
+        cancelBtn.textContent = '取消';
+        cancelBtn.addEventListener('click', () => {
+            dialog.remove();
+        });
+        
+        buttons.appendChild(confirmBtn);
+        buttons.appendChild(cancelBtn);
+        
+        // 遮罩层点击关闭
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 10002;
+        `;
+        overlay.addEventListener('click', () => {
+            overlay.remove();
+            dialog.remove();
+        });
+        
+        dialog.appendChild(title);
+        dialog.appendChild(preview);
+        dialog.appendChild(modeContainer);
+        dialog.appendChild(buttons);
+        
+        document.body.appendChild(overlay);
+        document.body.appendChild(dialog);
+    }
+
+    // 执行导入
+    function executeImport(importedData, mode) {
+        const importWatched = (importedData.watched || []).map(code => normalizeCode(code)).filter(code => code);
+        const importWanted = (importedData.wanted || []).map(code => normalizeCode(code)).filter(code => code);
+        
+        let result = {
+            watched: { before: 0, after: 0, added: 0 },
+            wanted: { before: 0, after: 0, added: 0 }
+        };
+        
+        if (mode === 'overwrite') {
+            // 覆盖模式：直接替换并排序
+            result.watched.before = GM_getValue(CONFIG.watchedStorageKey, []).length;
+            result.wanted.before = GM_getValue(CONFIG.wantedStorageKey, []).length;
+            
+            const sortedWatched = [...new Set(importWatched)].sort();
+            const sortedWanted = [...new Set(importWanted)].sort();
+            
+            GM_setValue(CONFIG.watchedStorageKey, sortedWatched);
+            GM_setValue(CONFIG.wantedStorageKey, sortedWanted);
+            
+            result.watched.after = sortedWatched.length;
+            result.wanted.after = sortedWanted.length;
+            result.watched.added = sortedWatched.length;
+            result.wanted.added = sortedWanted.length;
+            
+        } else {
+            // 合并模式：合并、去重并排序
+            const currentWatched = GM_getValue(CONFIG.watchedStorageKey, []);
+            const currentWanted = GM_getValue(CONFIG.wantedStorageKey, []);
+            
+            result.watched.before = currentWatched.length;
+            result.wanted.before = currentWanted.length;
+            
+            // 合并已看列表并排序
+            const mergedWatched = [...new Set([...currentWatched, ...importWatched])].sort();
+            GM_setValue(CONFIG.watchedStorageKey, mergedWatched);
+            result.watched.after = mergedWatched.length;
+            result.watched.added = mergedWatched.length - currentWatched.length;
+            
+            // 合并想看列表并排序
+            const mergedWanted = [...new Set([...currentWanted, ...importWanted])].sort();
+            GM_setValue(CONFIG.wantedStorageKey, mergedWanted);
+            result.wanted.after = mergedWanted.length;
+            result.wanted.added = mergedWanted.length - currentWanted.length;
+            
+            // 处理跨列表重复：如果一个番号同时在已看和想看中，从想看中移除
+            const crossDuplicates = mergedWatched.filter(code => mergedWanted.includes(code));
+            if (crossDuplicates.length > 0) {
+                const newWanted = mergedWanted.filter(code => !mergedWatched.includes(code)).sort();
+                GM_setValue(CONFIG.wantedStorageKey, newWanted);
+                result.wanted.after = newWanted.length;
+                debugLog(`跨列表重复移除: ${crossDuplicates.length} 个番号`);
+            }
+        }
+        
+        // 更新UI
+        updateGlobalCount();
+        
+        // 重新应用屏蔽效果
+        setTimeout(() => {
+            applyBlockEffect();
+        }, 100);
+        
+        // 显示结果
+        const totalAdded = result.watched.added + result.wanted.added;
+        const totalAfter = result.watched.after + result.wanted.after;
+        
+        showImportResult(result, mode, totalAdded, totalAfter);
+        
+        debugLog('导入完成:', { mode, result });
+    }
+
+    // 显示导入结果
+    function showImportResult(result, mode, totalAdded, totalAfter) {
+        const modeText = mode === 'overwrite' ? '覆盖' : '合并';
+        
+        // 使用 io-result 区域显示结果
+        const ioResult = document.getElementById('io-result');
+        if (ioResult) {
+            ioResult.style.display = 'block';
+            ioResult.style.background = 'rgba(39, 174, 96, 0.2)';
+            ioResult.style.border = '1px solid rgba(39, 174, 96, 0.5)';
+            ioResult.style.color = '#27ae60';
+            
+            ioResult.innerHTML = `
+                <div style="font-weight: bold; margin-bottom: 8px; text-align: center;">✅ 导入完成 (${modeText}模式)</div>
+                <div style="display: flex; justify-content: space-around; margin-bottom: 5px;">
+                    <div>已看: ${result.watched.before} → ${result.watched.after} <span style="color: #2ecc71;">(+${result.watched.added})</span></div>
+                    <div>想看: ${result.wanted.before} → ${result.wanted.after} <span style="color: #2ecc71;">(+${result.wanted.added})</span></div>
+                </div>
+                <div style="text-align: center; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 5px;">
+                    共导入 ${totalAdded} 个新番号，总计 ${totalAfter} 个
+                </div>
+            `;
+            
+            // 5秒后自动隐藏
+            setTimeout(() => {
+                ioResult.style.display = 'none';
+            }, 5000);
+        }
+        
+        showMessage(`导入完成！新增 ${totalAdded} 个番号`, 'success');
     }
 
     // 绑定影片详情页的想看/看過按钮
@@ -2751,16 +3257,16 @@
 
         // 从对面列表中移除（如果存在，不区分大小写和空格）
         if (findMatchingCode(normalizedCode, oppositeList)) {
-            oppositeList = oppositeList.filter(code => !isCodeMatch(code, normalizedCode));
+            oppositeList = oppositeList.filter(code => !isCodeMatch(code, normalizedCode)).sort();
             GM_setValue(oppositeKey, oppositeList);
             showMessage(`番号 ${normalizedCode} 已从${listType === 'watched' ? '想看' : '看过'}列表移除，并添加到${listType === 'watched' ? '看过' : '想看'}列表`, 'info');
         } else {
             showMessage(`番号 ${normalizedCode} 已添加到${listType === 'watched' ? '看过' : '想看'}列表`, 'success');
         }
 
-        // 添加到新列表
+        // 添加到新列表并排序
         currentList.push(normalizedCode);
-        GM_setValue(storageKey, currentList);
+        GM_setValue(storageKey, currentList.sort());
 
         // 更新UI
         updateGlobalCount();
