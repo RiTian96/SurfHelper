@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.7.0
-// @description  [核心] 已看/想看影片自动屏蔽，智能评分过滤；[增强] 高分影片高亮显示，批量导入列表；[管理] 可视化开关控制，智能搜索管理；[新增] 欧美区番号支持，不区分大小写空格匹配；[优化] 番号标准化存储，自动转大写去空格防重复；[新增] 手动数据清理功能，管理窗口一键清理重复数据；[新增] 前缀去重功能，自动删除不完整番号；[新增] 鼠标悬停大图预览，智能避让自适应；[新增] 数据导入导出功能，备份恢复番号数据
+// @version      1.8.0
+// @description  [核心] 看过/想看影片自动屏蔽，低分过滤高分高亮；[功能] 批量导入，大图预览，数据备份；[支持] 欧美区番号
 // @author       RiTian96
 // @match        https://javdb.com/*
 // @icon         https://javdb.com/favicon.ico
@@ -32,9 +32,10 @@
         panelCreated: false, // 防止重复创建面板
         
         // 功能开关
-        enableWatchedBlock: true, // 是否启用已看屏蔽
+        enableWatchedBlock: true, // 是否启用看过屏蔽
         enableWantedBlock: true, // 是否启用想看屏蔽
-        enableLowScoreBlock: true // 是否启用低分屏蔽（同时控制高分高亮）
+        enableLowScoreBlock: true, // 是否启用低分屏蔽（同时控制高分高亮）
+        enableImagePreview: true // 是否启用大图预览
     };
 
     // 调试日志函数
@@ -45,6 +46,9 @@
     }
     
     // 从影片项中提取番号（支持日式和欧美区）
+    // 规则：
+    // - 日式番号（去除日期后仍有数字）：只保留番号，不需要标题，全部大写
+    // - 欧美区番号（去除日期后纯字母）：保留完整番号+标题（不含日期），全部大写
     function getVideoCodeFromItem(item) {
         // 列表页面：统一使用 .video-title
         const videoTitle = item.querySelector('.video-title');
@@ -52,16 +56,26 @@
             const strongElement = videoTitle.querySelector('strong');
             if (strongElement) {
                 const strongText = strongElement.textContent.trim();
-                // 判断是否为日式番号（包含 - 号）
-                if (strongText.includes('-')) {
-                    const normalizedCode = normalizeCode(strongText);
-                    debugLog(`从 video-title strong 获取日式番号: ${strongText} -> 标准化: ${normalizedCode}`);
-                    return normalizedCode;
-                } else {
-                    // 欧美区：使用完整 title
-                    const fullTitle = videoTitle.textContent.trim();
+                
+                // 先去除日期格式，再判断是否为欧美区
+                let cleanedStrong = strongText;
+                cleanedStrong = cleanedStrong.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '');
+                cleanedStrong = cleanedStrong.replace(/\.\d{4}\.\d{2}\.\d{2}/g, '');
+                
+                // 判断去除日期后是否为纯字母（欧美区）
+                const isPureLetters = /^[a-zA-Z]+$/.test(cleanedStrong.replace(/\s+/g, ''));
+                
+                if (isPureLetters) {
+                    // 欧美区：使用完整 title（番号+标题），去掉日期
+                    let fullTitle = videoTitle.textContent.trim();
                     const normalizedCode = normalizeCode(fullTitle);
                     debugLog(`从 video-title 获取欧美区完整番号: ${fullTitle} -> 标准化: ${normalizedCode}`);
+                    return normalizedCode;
+                } else {
+                    // 日式番号：只需要番号部分，不需要标题
+                    // 番号格式可能为：ABC-123, ABC_123, ABC123 等
+                    const normalizedCode = normalizeCode(strongText);
+                    debugLog(`从 video-title strong 获取日式番号: ${strongText} -> 标准化: ${normalizedCode}`);
                     return normalizedCode;
                 }
             }
@@ -84,10 +98,36 @@
         return normalize(fullCode).startsWith(normalize(prefix));
     }
 
-    // 番号标准化函数：转换为大写并去除空格
+    // 番号标准化函数
+    // 规则：
+    // - 欧美区（去除日期后纯字母）：全部大写，保留完整标题
+    // - 日厂（去除日期后仍有数字）：全部大写，只保留字母、数字、-、_
     function normalizeCode(code) {
         if (!code || typeof code !== 'string') return code;
-        return code.replace(/\s+/g, '').toUpperCase();
+        
+        // 先去除空格
+        let normalized = code.replace(/\s+/g, '');
+        
+        // 去除日期格式（欧美区常见）
+        // 格式1: .YY.MM.DD 如 .26.02.26
+        // 格式2: .YYYY.MM.DD 如 .2026.02.26
+        normalized = normalized.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '');
+        normalized = normalized.replace(/\.\d{4}\.\d{2}\.\d{2}/g, '');
+        
+        // 判断是否为纯字母（欧美区）- 去除日期后再判断
+        const isPureLetters = /^[a-zA-Z]+$/.test(normalized);
+        
+        if (isPureLetters) {
+            // 纯字母（欧美区）：全部大写，保留完整标题
+            return normalized.toUpperCase();
+        } else {
+            // 带数字（日厂）：
+            // 1. 全部大写
+            // 2. 只保留字母、数字、-、_
+            normalized = normalized.toUpperCase();
+            normalized = normalized.replace(/[^A-Z0-9\-_]/g, '');
+            return normalized;
+        }
     }
 
     // 前缀去重：删除是其他番号前缀的较短番号
@@ -110,6 +150,53 @@
         };
     }
 
+    // 清理番号：用于清理已存储的旧数据
+    // 规则：
+    // 1. 去日期、转大写
+    // 2. 尝试匹配标准番号格式，只保留番号部分
+    // 3. 如果不匹配标准格式，只保留字母、数字、-、_
+    function cleanCodeForNewRule(code) {
+        if (!code || typeof code !== 'string') return null;
+        
+        // 先去除空格
+        let cleaned = code.replace(/\s+/g, '');
+        
+        // 去除日期格式
+        cleaned = cleaned.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '');
+        cleaned = cleaned.replace(/\.\d{4}\.\d{2}\.\d{2}/g, '');
+        
+        // 统一转大写
+        cleaned = cleaned.toUpperCase();
+        
+        // 尝试匹配标准日厂番号格式（优先匹配，只保留番号部分）
+        
+        // 格式1: 带连接符 XXX-123 或 XXX_123（字母或数字开头）
+        // 如: FCP-089, 111315_189, ABC_123
+        const matchWithSeparator = cleaned.match(/^([A-Z0-9]+[-_][A-Z0-9]+)/);
+        if (matchWithSeparator) {
+            return matchWithSeparator[1];
+        }
+        
+        // 格式2: 纯字母+数字（无连接符）XXX123 或 XXX123XXX
+        // 如: FZ65, ABC123
+        // 但要避免把标题里的 VOL65AV 也混进去，只取第一个"字母+数字"组合
+        const matchAlphaNum = cleaned.match(/^([A-Z]+[0-9]+)/);
+        if (matchAlphaNum) {
+            return matchAlphaNum[1];
+        }
+        
+        // 格式3: 纯数字开头（一些特殊番号）
+        // 如: 123456
+        const matchPureNum = cleaned.match(/^([0-9]+)/);
+        if (matchPureNum && !cleaned.match(/^[0-9]+[A-Z]/)) {
+            return matchPureNum[1];
+        }
+        
+        // 如果都不匹配，保留全部字母、数字、-、_
+        cleaned = cleaned.replace(/[^A-Z0-9\-_]/g, '');
+        return cleaned || null;
+    }
+
     // 数据清理：手动执行，清理和标准化已存储的番号数据
     function cleanupData() {
         debugLog('开始数据清理：清理和标准化已存储的番号');
@@ -117,18 +204,26 @@
         const result = {
             before: { watched: 0, wanted: 0, total: 0 },
             after: { watched: 0, wanted: 0, total: 0 },
-            removed: { duplicates: 0, crossList: 0, prefix: 0 },
+            removed: { duplicates: 0, invalid: 0, crossList: 0, prefix: 0 },
             details: { watchedPrefix: [], wantedPrefix: [] },
             changed: false
         };
 
-        // 处理已看列表
+        // 处理看过列表
         const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
         result.before.watched = watchedCodes.length;
 
-        // 标准化并去重
-        let processedWatched = [...new Set(watchedCodes.map(code => normalizeCode(code)).filter(code => code))];
-        result.removed.duplicates += watchedCodes.length - processedWatched.length;
+        // 使用新的清理规则标准化
+        let processedWatched = watchedCodes
+            .map(code => cleanCodeForNewRule(code))
+            .filter(code => code); // 移除无效番号
+        
+        result.removed.invalid = watchedCodes.length - processedWatched.length;
+
+        // 去重
+        const beforeDedup = processedWatched.length;
+        processedWatched = [...new Set(processedWatched)];
+        result.removed.duplicates += beforeDedup - processedWatched.length;
 
         // 前缀去重
         const prefixResultWatched = removePrefixDuplicates(processedWatched);
@@ -153,16 +248,24 @@
         if (watchedChanged) {
             GM_setValue(CONFIG.watchedStorageKey, processedWatched);
             result.changed = true;
-            debugLog(`已看列表：${watchedCodes.length} -> ${processedWatched.length}，清理了 ${watchedCodes.length - processedWatched.length} 项`);
+            debugLog(`看过列表：${watchedCodes.length} -> ${processedWatched.length}，清理了 ${watchedCodes.length - processedWatched.length} 项`);
         }
 
         // 处理想看列表
         const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
         result.before.wanted = wantedCodes.length;
 
-        // 标准化并去重
-        let processedWanted = [...new Set(wantedCodes.map(code => normalizeCode(code)).filter(code => code))];
-        result.removed.duplicates += wantedCodes.length - processedWanted.length;
+        // 使用新的清理规则标准化
+        let processedWanted = wantedCodes
+            .map(code => cleanCodeForNewRule(code))
+            .filter(code => code);
+
+        result.removed.invalid += wantedCodes.length - processedWanted.length;
+
+        // 去重
+        const beforeDedupWanted = processedWanted.length;
+        processedWanted = [...new Set(processedWanted)];
+        result.removed.duplicates += beforeDedupWanted - processedWanted.length;
 
         // 前缀去重
         const prefixResultWanted = removePrefixDuplicates(processedWanted);
@@ -190,11 +293,12 @@
             debugLog(`想看列表：${wantedCodes.length} -> ${processedWanted.length}，清理了 ${wantedCodes.length - processedWanted.length} 项`);
         }
 
-        // 检查两个列表之间的重复（一个番号不能同时在已看和想看中）
+        // 检查两个列表之间的重复（一个番号不能同时在看过和想看中）
+        // 注意：现在大小写敏感，需要精确匹配
         const duplicates = processedWatched.filter(code => processedWanted.includes(code));
         if (duplicates.length > 0) {
             debugLog(`发现跨列表重复项：`, duplicates);
-            // 默认保留在已看列表中，从想看列表移除
+            // 默认保留在看过列表中，从想看列表移除
             const newWanted = processedWanted.filter(code => !processedWatched.includes(code)).sort();
             GM_setValue(CONFIG.wantedStorageKey, newWanted);
             result.removed.crossList = duplicates.length;
@@ -209,7 +313,8 @@
         const totalRemoved = result.before.total - result.after.total;
         if (totalRemoved > 0 || result.changed) {
             console.log(`[JavDB Manager] 数据清理完成：
-- 重复/无效：${result.removed.duplicates}
+- 无效/标准化：${result.removed.invalid}
+- 重复：${result.removed.duplicates}
 - 前缀去重：${result.removed.prefix}
 - 跨列表重复：${result.removed.crossList}
 - 总计清理：${totalRemoved} 个番号`);
@@ -291,6 +396,7 @@
         const savedWatchedBlock = localStorage.getItem('javdb_enable_watched_block');
         const savedWantedBlock = localStorage.getItem('javdb_enable_wanted_block');
         const savedLowScoreBlock = localStorage.getItem('javdb_enable_low_score_block');
+        const savedImagePreview = localStorage.getItem('javdb_enable_image_preview');
         
         if (savedWatchedBlock !== null) {
             CONFIG.enableWatchedBlock = savedWatchedBlock === 'true';
@@ -301,11 +407,15 @@
         if (savedLowScoreBlock !== null) {
             CONFIG.enableLowScoreBlock = savedLowScoreBlock === 'true';
         }
+        if (savedImagePreview !== null) {
+            CONFIG.enableImagePreview = savedImagePreview === 'true';
+        }
         
         debugLog('加载配置:', {
             enableWatchedBlock: CONFIG.enableWatchedBlock,
             enableWantedBlock: CONFIG.enableWantedBlock,
-            enableLowScoreBlock: CONFIG.enableLowScoreBlock
+            enableLowScoreBlock: CONFIG.enableLowScoreBlock,
+            enableImagePreview: CONFIG.enableImagePreview
         });
     }
     
@@ -314,10 +424,12 @@
         localStorage.setItem('javdb_enable_watched_block', CONFIG.enableWatchedBlock.toString());
         localStorage.setItem('javdb_enable_wanted_block', CONFIG.enableWantedBlock.toString());
         localStorage.setItem('javdb_enable_low_score_block', CONFIG.enableLowScoreBlock.toString());
+        localStorage.setItem('javdb_enable_image_preview', CONFIG.enableImagePreview.toString());
         debugLog('保存配置:', {
             enableWatchedBlock: CONFIG.enableWatchedBlock,
             enableWantedBlock: CONFIG.enableWantedBlock,
-            enableLowScoreBlock: CONFIG.enableLowScoreBlock
+            enableLowScoreBlock: CONFIG.enableLowScoreBlock,
+            enableImagePreview: CONFIG.enableImagePreview
         });
     }
     
@@ -408,7 +520,7 @@
             item.classList.remove('javdb-blocked', 'javdb-watched', 'javdb-wanted', 
                                'javdb-low-score', 'javdb-normal-score', 'javdb-high-score', 'javdb-excellent');
             
-            // 应用屏蔽效果（已看/想看）
+            // 应用屏蔽效果（看过/想看）
             applyBlockEffectInternal(item);
             
             // 应用评分效果（低分屏蔽+高亮）
@@ -429,12 +541,12 @@
             let shouldBlock = false;
             
             // 根据当前页面类型决定屏蔽策略
-            // 在看过页面，只屏蔽已看的，不屏蔽想看的
+            // 在看过页面，只屏蔽看过的，不屏蔽想看的
             if (CONFIG.currentPageType === 'watched') {
                 if (findMatchingCode(code, watchedCodes) && CONFIG.enableWatchedBlock) {
                     item.classList.add('javdb-watched');
                     shouldBlock = true;
-                    debugLog(`看过页面屏蔽已看番号: ${code}`);
+                    debugLog(`看过页面屏蔽看过番号: ${code}`);
                 }
                 // 在看过页面，想看的影片正常显示，但添加标记以便区分
                 else if (findMatchingCode(code, wantedCodes)) {
@@ -443,27 +555,27 @@
                     debugLog(`看过页面显示想看番号: ${code}（不屏蔽）`);
                 }
             }
-            // 在想看页面，只屏蔽想看的，不屏蔽已看的
+            // 在想看页面，只屏蔽想看的，不屏蔽看过的
             else if (CONFIG.currentPageType === 'wanted') {
                 if (findMatchingCode(code, wantedCodes) && CONFIG.enableWantedBlock) {
                     item.classList.add('javdb-wanted');
                     shouldBlock = true;
                     debugLog(`想看页面屏蔽想看番号: ${code}`);
                 }
-                // 在想看页面，已看的影片正常显示，但添加标记以便区分
+                // 在想看页面，看过的影片正常显示，但添加标记以便区分
                 else if (findMatchingCode(code, watchedCodes)) {
                     item.classList.add('javdb-watched');
                     // 不设置shouldBlock，所以不会被屏蔽
-                    debugLog(`想看页面显示已看番号: ${code}（不屏蔽）`);
+                    debugLog(`想看页面显示看过番号: ${code}（不屏蔽）`);
                 }
             }
             // 在其他页面，按照原来的逻辑屏蔽所有
             else {
-                // 检查是否在已看列表中
+                // 检查是否在看过列表中
                 if (findMatchingCode(code, watchedCodes) && CONFIG.enableWatchedBlock) {
                     item.classList.add('javdb-watched');
                     shouldBlock = true;
-                    debugLog(`其他页面屏蔽已看番号: ${code}`);
+                    debugLog(`其他页面屏蔽看过番号: ${code}`);
                 }
                 
                 // 检查是否在想看列表中
@@ -687,6 +799,9 @@
     function bindMagicLensEvents() {
         // 鼠标悬停显示大图
         document.body.addEventListener('mouseover', function(e) {
+            // 检查开关状态
+            if (!CONFIG.enableImagePreview) return;
+            
             const item = e.target.closest('.movie-list .item');
             if (item) {
                 const lens = document.getElementById('javdb-magic-lens');
@@ -734,6 +849,9 @@
 
         // 鼠标移出隐藏大图
         document.body.addEventListener('mouseout', function(e) {
+            // 检查开关状态
+            if (!CONFIG.enableImagePreview) return;
+            
             const item = e.target.closest('.movie-list .item');
             const related = e.relatedTarget;
             const lens = document.getElementById('javdb-magic-lens');
@@ -746,7 +864,8 @@
 
         // 智能避让：根据鼠标位置决定大图显示在左边还是右边
         document.addEventListener('mousemove', function(e) {
-            if (!LensState.isVisible) return;
+            // 检查开关状态
+            if (!CONFIG.enableImagePreview || !LensState.isVisible) return;
 
             const lens = document.getElementById('javdb-magic-lens');
             if (!lens) return;
@@ -1251,7 +1370,7 @@
                 pointer-events: none;
             }
 
-            /* 屏蔽效果样式（已看想看） - 只暗淡不变灰 */
+            /* 屏蔽效果样式（看过想看） - 只暗淡不变灰 */
             .movie-list .item.javdb-blocked:not(.javdb-low-score) {
                 opacity: 0.5 !important;
                 filter: none !important;
@@ -1278,7 +1397,7 @@
 
             /* 看过标记 */
             .movie-list .item.javdb-watched::before {
-                content: '已看';
+                content: '看过';
                 position: absolute;
                 top: 5px;
                 right: 5px;
@@ -1310,7 +1429,7 @@
 
             /* 如果既是看过又是想看（优先显示看过） */
             .movie-list .item.javdb-watched.javdb-wanted::before {
-                content: '已看';
+                content: '看过';
                 background: rgba(231, 76, 60, 0.9);
             }
             
@@ -1320,7 +1439,7 @@
                 background: rgba(243, 156, 18, 0.05) !important;
             }
             
-            /* 想看页面中的已看影片特殊样式 - 不屏蔽但标记为已看过 */
+            /* 想看页面中的看过影片特殊样式 - 不屏蔽但标记为看过 */
             body[data-page="wanted"] .movie-list .item.javdb-watched:not(.javdb-blocked) {
                 border: 2px dashed rgba(231, 76, 60, 0.6) !important;
                 background: rgba(231, 76, 60, 0.05) !important;
@@ -1486,12 +1605,12 @@
 
         const importTab = document.createElement('button');
         importTab.className = 'manager-tab active';
-        importTab.textContent = '导入';
+        importTab.textContent = '📥 导入';
         importTab.setAttribute('data-tab', 'import');
 
         const manageTab = document.createElement('button');
         manageTab.className = 'manager-tab';
-        manageTab.textContent = '管理';
+        manageTab.textContent = '⚙️ 管理';
         manageTab.setAttribute('data-tab', 'manage');
 
         tabsContainer.appendChild(importTab);
@@ -1527,145 +1646,6 @@
         importContent.appendChild(buttonContainer);
         importContent.appendChild(stopBtn);
 
-        // 管理标签页内容
-        const manageContent = document.createElement('div');
-        manageContent.className = 'manager-tab-content';
-        manageContent.setAttribute('data-content', 'manage');
-
-        // 智能管理功能
-        const smartContainer = document.createElement('div');
-        smartContainer.className = 'smart-container';
-
-        const smartInput = document.createElement('input');
-        smartInput.className = 'smart-input';
-        smartInput.id = 'smart-input';
-        smartInput.placeholder = '输入番号进行查询/添加/删除';
-
-        const smartResult = document.createElement('div');
-        smartResult.className = 'smart-result';
-        smartResult.id = 'smart-result';
-        smartResult.style.display = 'none';
-
-        const smartActions = document.createElement('div');
-        smartActions.className = 'smart-actions';
-        smartActions.id = 'smart-actions';
-        smartActions.style.display = 'none';
-
-        smartContainer.appendChild(smartInput);
-        smartContainer.appendChild(smartResult);
-        smartContainer.appendChild(smartActions);
-
-        manageContent.appendChild(smartContainer);
-        
-        // 添加功能开关
-        const switchContainer = document.createElement('div');
-        switchContainer.className = 'switch-container';
-        switchContainer.style.marginTop = '15px';
-        switchContainer.style.paddingTop = '15px';
-        switchContainer.style.borderTop = '1px solid rgba(255,255,255,0.2)';
-        
-        // 已看屏蔽开关
-        const watchedSwitch = createSwitch('已看屏蔽', 'enableWatchedBlock', CONFIG.enableWatchedBlock);
-        switchContainer.appendChild(watchedSwitch);
-        
-        // 想看屏蔽开关
-        const wantedSwitch = createSwitch('想看屏蔽', 'enableWantedBlock', CONFIG.enableWantedBlock);
-        switchContainer.appendChild(wantedSwitch);
-        
-        // 低分屏蔽开关（同时控制高分高亮）
-        const scoreSwitch = createSwitch('评分功能', 'enableLowScoreBlock', CONFIG.enableLowScoreBlock);
-        switchContainer.appendChild(scoreSwitch);
-
-        manageContent.appendChild(switchContainer);
-
-        // 添加数据清理按钮
-        const cleanupContainer = document.createElement('div');
-        cleanupContainer.style.marginTop = '15px';
-        cleanupContainer.style.paddingTop = '15px';
-        cleanupContainer.style.borderTop = '1px solid rgba(255,255,255,0.2)';
-
-        const cleanupResult = document.createElement('div');
-        cleanupResult.id = 'cleanup-result';
-        cleanupResult.style.cssText = `
-            display: none;
-            margin-bottom: 10px;
-            padding: 10px;
-            border-radius: 6px;
-            font-size: 12px;
-            text-align: center;
-        `;
-
-        const cleanupButton = document.createElement('button');
-        cleanupButton.className = 'manager-button';
-        cleanupButton.style.cssText = `
-            background: linear-gradient(135deg, #e74c3c, #c0392b);
-            color: white;
-            width: 100%;
-            font-size: 13px;
-            padding: 10px;
-        `;
-        cleanupButton.textContent = '🧹 去重并标准化数据';
-        cleanupButton.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const result = cleanupData();
-
-            // 显示结果
-            cleanupResult.style.display = 'block';
-            if (result.changed) {
-                const totalRemoved = result.before.total - result.after.total;
-                cleanupResult.style.background = 'rgba(39, 174, 96, 0.2)';
-                cleanupResult.style.border = '1px solid rgba(39, 174, 96, 0.5)';
-                cleanupResult.style.color = '#27ae60';
-                cleanupResult.style.textAlign = 'left';
-                
-                // 构建详情信息
-                let detailsHtml = '';
-                if (result.removed.duplicates > 0) {
-                    detailsHtml += `<div>• 重复/无效：${result.removed.duplicates} 个</div>`;
-                }
-                if (result.removed.prefix > 0) {
-                    detailsHtml += `<div>• 前缀去重：${result.removed.prefix} 个</div>`;
-                    if (result.details.watchedPrefix.length > 0) {
-                        detailsHtml += `<div style="margin-left: 10px; font-size: 11px; color: rgba(255,255,255,0.7);">已看移除：${result.details.watchedPrefix.slice(0, 5).join(', ')}${result.details.watchedPrefix.length > 5 ? '...' : ''}</div>`;
-                    }
-                    if (result.details.wantedPrefix.length > 0) {
-                        detailsHtml += `<div style="margin-left: 10px; font-size: 11px; color: rgba(255,255,255,0.7);">想看移除：${result.details.wantedPrefix.slice(0, 5).join(', ')}${result.details.wantedPrefix.length > 5 ? '...' : ''}</div>`;
-                    }
-                }
-                if (result.removed.crossList > 0) {
-                    detailsHtml += `<div>• 跨列表重复：${result.removed.crossList} 个</div>`;
-                }
-                
-                cleanupResult.innerHTML = `
-                    <div style="font-weight: bold; margin-bottom: 8px; text-align: center;">✅ 清理完成</div>
-                    <div style="display: flex; justify-content: space-around; margin-bottom: 8px; text-align: center;">
-                        <div>已看：${result.before.watched} → ${result.after.watched}</div>
-                        <div>想看：${result.before.wanted} → ${result.after.wanted}</div>
-                    </div>
-                    <div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">
-                        ${detailsHtml}
-                    </div>
-                    <div style="margin-top: 8px; font-weight: bold; text-align: center;">共清理 ${totalRemoved} 个番号</div>
-                `;
-            } else {
-                cleanupResult.style.background = 'rgba(52, 152, 219, 0.2)';
-                cleanupResult.style.border = '1px solid rgba(52, 152, 219, 0.5)';
-                cleanupResult.style.color = '#3498db';
-                cleanupResult.style.textAlign = 'center';
-                cleanupResult.innerHTML = `
-                    <div style="font-weight: bold;">✓ 数据已是最新状态</div>
-                    <div style="font-size: 11px; margin-top: 3px;">没有发现需要清理的数据</div>
-                `;
-            }
-
-            // 更新显示
-            updateGlobalCount();
-        });
-
-        cleanupContainer.appendChild(cleanupResult);
-        cleanupContainer.appendChild(cleanupButton);
-        manageContent.appendChild(cleanupContainer);
-
         // === 数据导入导出功能 ===
         const ioContainer = document.createElement('div');
         ioContainer.style.cssText = `
@@ -1682,7 +1662,7 @@
             color: #3498db;
             text-align: center;
         `;
-        ioTitle.textContent = '📥 数据备份';
+        ioTitle.textContent = '💾 数据备份';
 
         // 导入结果提示区域
         const ioResult = document.createElement('div');
@@ -1750,7 +1730,132 @@
         ioContainer.appendChild(ioTitle);
         ioContainer.appendChild(ioResult);
         ioContainer.appendChild(ioButtons);
-        manageContent.appendChild(ioContainer);
+        importContent.appendChild(ioContainer);
+
+        // 管理标签页内容
+        const manageContent = document.createElement('div');
+        manageContent.className = 'manager-tab-content';
+        manageContent.setAttribute('data-content', 'manage');
+
+        // 智能管理功能
+        const smartContainer = document.createElement('div');
+        smartContainer.className = 'smart-container';
+
+        const smartInput = document.createElement('input');
+        smartInput.className = 'smart-input';
+        smartInput.id = 'smart-input';
+        smartInput.placeholder = '输入番号进行查询/添加/删除';
+
+        const smartResult = document.createElement('div');
+        smartResult.className = 'smart-result';
+        smartResult.id = 'smart-result';
+        smartResult.style.display = 'none';
+
+        const smartActions = document.createElement('div');
+        smartActions.className = 'smart-actions';
+        smartActions.id = 'smart-actions';
+        smartActions.style.display = 'none';
+
+        smartContainer.appendChild(smartInput);
+        smartContainer.appendChild(smartResult);
+        smartContainer.appendChild(smartActions);
+
+        manageContent.appendChild(smartContainer);
+        
+        // 添加功能开关
+        const switchContainer = document.createElement('div');
+        switchContainer.className = 'switch-container';
+        switchContainer.style.marginTop = '15px';
+        switchContainer.style.paddingTop = '15px';
+        switchContainer.style.borderTop = '1px solid rgba(255,255,255,0.2)';
+        
+        // 看过屏蔽开关
+        const watchedSwitch = createSwitch('看过屏蔽', 'enableWatchedBlock', CONFIG.enableWatchedBlock);
+        switchContainer.appendChild(watchedSwitch);
+        
+        // 想看屏蔽开关
+        const wantedSwitch = createSwitch('想看屏蔽', 'enableWantedBlock', CONFIG.enableWantedBlock);
+        switchContainer.appendChild(wantedSwitch);
+        
+        // 低分屏蔽开关（同时控制高分高亮）
+        const scoreSwitch = createSwitch('评分功能', 'enableLowScoreBlock', CONFIG.enableLowScoreBlock);
+        switchContainer.appendChild(scoreSwitch);
+        
+        // 大图预览开关
+        const imagePreviewSwitch = createSwitch('大图预览', 'enableImagePreview', CONFIG.enableImagePreview);
+        switchContainer.appendChild(imagePreviewSwitch);
+
+        manageContent.appendChild(switchContainer);
+
+        // 添加数据清理按钮
+        const cleanupContainer = document.createElement('div');
+        cleanupContainer.style.marginTop = '15px';
+        cleanupContainer.style.paddingTop = '15px';
+        cleanupContainer.style.borderTop = '1px solid rgba(255,255,255,0.2)';
+
+        const cleanupResult = document.createElement('div');
+        cleanupResult.id = 'cleanup-result';
+        cleanupResult.style.cssText = `
+            display: none;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            text-align: center;
+        `;
+
+        const cleanupButton = document.createElement('button');
+        cleanupButton.className = 'manager-button';
+        cleanupButton.style.cssText = `
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+            width: 100%;
+            font-size: 13px;
+            padding: 10px;
+        `;
+        cleanupButton.textContent = '🗑️ 清空所有数据';
+        cleanupButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            
+            const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
+            const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
+            const totalCount = watchedCodes.length + wantedCodes.length;
+            
+            if (totalCount === 0) {
+                showMessage('没有数据需要清空', 'warning');
+                return;
+            }
+            
+            // 二次确认对话框
+            if (confirm(`⚠️ 确认清空所有数据？\n\n此操作将删除：\n• 看过列表：${watchedCodes.length} 个\n• 想看列表：${wantedCodes.length} 个\n\n此功能用于清除过去错误格式的历史数据，清空后不可恢复！`)) {
+                // 清空数据
+                GM_setValue(CONFIG.watchedStorageKey, []);
+                GM_setValue(CONFIG.wantedStorageKey, []);
+                
+                // 显示结果
+                cleanupResult.style.display = 'block';
+                cleanupResult.style.background = 'rgba(231, 76, 60, 0.2)';
+                cleanupResult.style.border = '1px solid rgba(231, 76, 60, 0.5)';
+                cleanupResult.style.color = '#e74c3c';
+                cleanupResult.style.textAlign = 'center';
+                cleanupResult.innerHTML = `
+                    <div style="font-weight: bold; margin-bottom: 5px;">🗑️ 数据已清空</div>
+                    <div style="font-size: 11px;">已删除 ${totalCount} 个番号</div>
+                `;
+                
+                // 更新显示
+                updateGlobalCount();
+                
+                // 重新应用屏蔽效果
+                setTimeout(() => {
+                    applyBlockEffect();
+                }, 100);
+            }
+        });
+
+        cleanupContainer.appendChild(cleanupResult);
+        cleanupContainer.appendChild(cleanupButton);
+        manageContent.appendChild(cleanupContainer);
 
         // 添加调试按钮
         if (CONFIG.DEBUG) {
@@ -1934,10 +2039,16 @@
                 const currentPageItems = document.querySelectorAll('.movie-list .item').length;
                 
                 countDiv.innerHTML = `
-                    <div style="font-size: 11px; opacity: 0.8; color: #f39c12;">正在导入${typeText}</div>
-                    <div style="font-size: 18px; font-weight: bold; color: #f39c12;">${importedCount}</div>
-                    <div style="font-size: 10px; opacity: 0.7; margin-top: 2px;">
-                        本次导入数量 | 本页: ${currentPageItems} 个
+                    <div style="font-size: 12px; color: #f39c12; text-align: center;">正在导入${typeText}</div>
+                    <div style="display: flex; justify-content: space-around; margin-top: 8px; text-align: center;">
+                        <div>
+                            <div style="font-size: 20px; font-weight: bold; color: #f39c12;">${importedCount}</div>
+                            <div style="font-size: 10px; opacity: 0.7;">已导入</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 20px; font-weight: bold; color: #3498db;">${currentPageItems}</div>
+                            <div style="font-size: 10px; opacity: 0.7;">本页</div>
+                        </div>
                     </div>
                 `;
                 
@@ -2831,7 +2942,7 @@
             <div style="margin-bottom: 8px; color: #888;">备份日期: ${importDate}</div>
             <div style="display: flex; gap: 20px; justify-content: center;">
                 <div style="text-align: center;">
-                    <div style="font-size: 11px; color: #888;">已看</div>
+                    <div style="font-size: 11px; color: #888;">看过</div>
                     <div style="font-size: 20px; font-weight: bold; color: #e74c3c;">${importWatched.length}</div>
                 </div>
                 <div style="text-align: center;">
@@ -2839,10 +2950,9 @@
                     <div style="font-size: 20px; font-weight: bold; color: #f39c12;">${importWanted.length}</div>
                 </div>
             </div>
-            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1); text-align: center; color: #888;">
-                当前数据: 已看 ${currentWatched.length} | 想看 ${currentWanted.length}
-            </div>
-        `;
+                            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1); text-align: center; color: #888;">
+                            当前数据: 看过 ${currentWatched.length} | 想看 ${currentWanted.length}
+                        </div>        `;
         
         // 导入模式选项
         const modeContainer = document.createElement('div');
@@ -3015,7 +3125,7 @@
             result.watched.before = currentWatched.length;
             result.wanted.before = currentWanted.length;
             
-            // 合并已看列表并排序
+            // 合并看过列表并排序
             const mergedWatched = [...new Set([...currentWatched, ...importWatched])].sort();
             GM_setValue(CONFIG.watchedStorageKey, mergedWatched);
             result.watched.after = mergedWatched.length;
@@ -3027,7 +3137,7 @@
             result.wanted.after = mergedWanted.length;
             result.wanted.added = mergedWanted.length - currentWanted.length;
             
-            // 处理跨列表重复：如果一个番号同时在已看和想看中，从想看中移除
+            // 处理跨列表重复：如果一个番号同时在看过和想看中，从想看中移除
             const crossDuplicates = mergedWatched.filter(code => mergedWanted.includes(code));
             if (crossDuplicates.length > 0) {
                 const newWanted = mergedWanted.filter(code => !mergedWatched.includes(code)).sort();
@@ -3069,7 +3179,7 @@
             ioResult.innerHTML = `
                 <div style="font-weight: bold; margin-bottom: 8px; text-align: center;">✅ 导入完成 (${modeText}模式)</div>
                 <div style="display: flex; justify-content: space-around; margin-bottom: 5px;">
-                    <div>已看: ${result.watched.before} → ${result.watched.after} <span style="color: #2ecc71;">(+${result.watched.added})</span></div>
+                    <div>看过: ${result.watched.before} → ${result.watched.after} <span style="color: #2ecc71;">(+${result.watched.added})</span></div>
                     <div>想看: ${result.wanted.before} → ${result.wanted.after} <span style="color: #2ecc71;">(+${result.wanted.added})</span></div>
                 </div>
                 <div style="text-align: center; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 5px;">
@@ -3207,6 +3317,9 @@
         }
     
     // 获取当前影片番号（详情页面）
+    // 规则：
+    // - 日式番号（去除日期后仍有数字）：只保留番号，不需要标题，全部大写
+    // - 欧美区番号（去除日期后纯字母）：保留完整番号+标题（不含日期），全部大写
     function getCurrentVideoCode() {
         // 详情页面：使用 h2.title 提取番号
         const titleElement = document.querySelector('h2.title') || document.querySelector('h2[class*="title"]');
@@ -3214,19 +3327,25 @@
             const strongElement = titleElement.querySelector('strong');
             if (strongElement) {
                 const strongText = strongElement.textContent.trim();
-                // 判断是否为日式番号（包含 - 号）
-                if (strongText.includes('-')) {
-                    const normalizedCode = normalizeCode(strongText);
-                    debugLog(`从 h2.title strong 获取日式番号: ${strongText} -> 标准化: ${normalizedCode}`);
-                    return normalizedCode;
-                } else {
-                    // 欧美区：获取完整标题（strong + current-title）
+                
+                // 先去除日期格式，再判断是否为欧美区
+                let cleanedStrong = strongText;
+                cleanedStrong = cleanedStrong.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '');
+                cleanedStrong = cleanedStrong.replace(/\.\d{4}\.\d{2}\.\d{2}/g, '');
+                
+                // 判断去除日期后是否为纯字母（欧美区）
+                const isPureLetters = /^[a-zA-Z]+$/.test(cleanedStrong.replace(/\s+/g, ''));
+                
+                if (isPureLetters) {
+                    // 欧美区：获取完整标题（strong + current-title），去掉日期
                     let fullTitle = titleElement.textContent.trim();
-                    // 去掉日期部分（如 .26.01.31、.20.06.08）
-                    fullTitle = fullTitle.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '');
-                    // 标准化处理（会自动去除空格并转大写）
                     const normalizedCode = normalizeCode(fullTitle);
                     debugLog(`从 h2.title 获取欧美区完整番号: ${fullTitle} -> 标准化: ${normalizedCode}`);
+                    return normalizedCode;
+                } else {
+                    // 日式番号：只需要番号部分，不需要标题
+                    const normalizedCode = normalizeCode(strongText);
+                    debugLog(`从 h2.title strong 获取日式番号: ${strongText} -> 标准化: ${normalizedCode}`);
                     return normalizedCode;
                 }
             }
