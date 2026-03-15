@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.8.0
-// @description  [核心] 看过/想看影片自动屏蔽，低分过滤高分高亮；[功能] 批量导入，大图预览，数据备份；[支持] 欧美区番号
+// @version      1.9.0
+// @description  [核心] 看过/想看影片自动屏蔽，智能评分分级（低分/高分）；[功能] 批量导入，大图预览，数据备份；[支持] 欧美区番号
 // @author       RiTian96
 // @match        https://javdb.com/*
 // @icon         https://javdb.com/favicon.ico
@@ -593,6 +593,23 @@
         }
     }
     
+    // 根据评价人数获取评分阈值
+    function getScoreThresholds(reviewCount) {
+        if (reviewCount < 10) {
+            return { lowScore: null, highScore: null }; // 样本太小，不做判断
+        } else if (reviewCount < 50) {
+            return { lowScore: 3.0, highScore: 4.4 };
+        } else if (reviewCount < 100) {
+            return { lowScore: 3.1, highScore: 4.3 };
+        } else if (reviewCount < 300) {
+            return { lowScore: 3.2, highScore: 4.2 };
+        } else if (reviewCount < 1000) {
+            return { lowScore: 3.3, highScore: 4.1 };
+        } else {
+            return { lowScore: 3.4, highScore: 4.0 };
+        }
+    }
+
     // 应用评分效果
     function applyScoreHighlight(item) {
         // 尝试多种可能的评分元素选择器
@@ -611,94 +628,51 @@
                            .replace(/=E4=BA=BA/g, '人')
                            .replace(/=E7=94=A8/g, '用')
                            .replace(/=E8=A9=95=E5=83=B9/g, '評價')
-                           .replace(/=E7=9C=8B/g, '看') // 看的繁体
-                           .replace(/=E7=94=B1/g, '由'); // 由的繁体
-        
-        debugLog(`评分文本: ${scoreText}`);
+                           .replace(/=E7=9C=8B/g, '看')
+                           .replace(/=E7=94=B1/g, '由');
         
         // 匹配评分格式：X.XX分, 由XXX人評價
         const scoreMatch = scoreText.match(/([\d.]+)分[,，]\s*由(\d+)人(?:評價|评价)/);
         
+        // 清除之前的评分相关类
+        item.classList.remove('javdb-low-score', 'javdb-high-score');
+        
+        if (!CONFIG.enableLowScoreBlock) return;
+        
+        let score, reviewCount;
+        
         if (scoreMatch) {
-            const score = parseFloat(scoreMatch[1]);
-            const reviewCount = parseInt(scoreMatch[2]);
-            
-            debugLog(`解析评分: ${score}分, ${reviewCount}人评价`);
-            
-            // 清除之前的评分相关类
-            item.classList.remove('javdb-low-score', 'javdb-normal-score', 'javdb-high-score', 'javdb-excellent');
-            
-            // 新的评分规则逻辑
-            if (CONFIG.enableLowScoreBlock) {
-                // 10人以下评价，无论多少分都正常显示
-                if (reviewCount <= 10) {
-                    debugLog(`评价人数较少(${reviewCount}人)，正常显示: ${score}分`);
-                }
-                // 10人以上评价的分级规则
-                else {
-                    // 0-3.5分屏蔽
-                    if (score < 3.5) {
-                        item.classList.add('javdb-low-score');
-                        debugLog(`低分屏蔽: ${score}分, ${reviewCount}人评价`);
-                    }
-                    // 3.5-4.0分正常显示
-                    else if (score >= 3.5 && score < 4.0) {
-                        debugLog(`正常显示: ${score}分, ${reviewCount}人评价`);
-                    }
-                    // 4.0-4.5分推荐
-                    else if (score >= 4.0 && score < 4.5) {
-                        item.classList.add('javdb-high-score');
-                        debugLog(`推荐影片: ${score}分, ${reviewCount}人评价`);
-                    }
-                    // 4.5分以上必看
-                    else if (score >= 4.5) {
-                        item.classList.add('javdb-excellent');
-                        debugLog(`必看影片: ${score}分, ${reviewCount}人评价`);
-                    }
-                }
-            }
+            score = parseFloat(scoreMatch[1]);
+            reviewCount = parseInt(scoreMatch[2]);
         } else {
-            // 如果正则不匹配，尝试更宽松的匹配
+            // 宽松匹配：只提取分数
             const looseMatch = scoreText.match(/([\d.]+)/);
-            if (looseMatch) {
-                const score = parseFloat(looseMatch[1]);
-                debugLog(`宽松匹配评分: ${score}分`);
-                
-                // 清除之前的评分相关类
-                item.classList.remove('javdb-low-score', 'javdb-normal-score', 'javdb-high-score', 'javdb-excellent');
-                
-                // 宽松匹配的新评分规则
-                if (CONFIG.enableLowScoreBlock) {
-                    // 无法确定评价人数时，按原逻辑处理
-                    if (score === 0 || scoreText.includes('0人')) {
-                        debugLog(`无人评分或0分，正常显示: ${score}分`);
-                    }
-                    // 0-3.5分屏蔽
-                    else if (score < 3.5) {
-                        item.classList.add('javdb-low-score');
-                        debugLog(`低分屏蔽: ${score}分`);
-                    }
-                    // 3.5-4.0分正常显示
-                    else if (score >= 3.5 && score < 4.0) {
-                        debugLog(`正常显示: ${score}分`);
-                    }
-                    // 4.0-4.5分推荐
-                    else if (score >= 4.0 && score < 4.5) {
-                        item.classList.add('javdb-high-score');
-                        debugLog(`推荐影片: ${score}分`);
-                    }
-                    // 4.5分以上必看
-                    else if (score >= 4.5) {
-                        item.classList.add('javdb-excellent');
-                        debugLog(`必看影片: ${score}分`);
-                    }
-                }
-            } else {
-                // 完全无法解析评分，正常显示
+            if (!looseMatch) {
                 debugLog(`无法解析评分，正常显示`);
-                // 清除之前的评分相关类
-                item.classList.remove('javdb-low-score', 'javdb-normal-score', 'javdb-high-score', 'javdb-excellent');
+                return;
             }
+            score = parseFloat(looseMatch[1]);
+            reviewCount = 0; // 无法获取人数时按0处理
+        }
+        
+        // 获取阈值
+        const thresholds = getScoreThresholds(reviewCount);
+        
+        // 样本太小，不做判断
+        if (thresholds.lowScore === null) {
+            debugLog(`评价人数较少(${reviewCount}人)，正常显示: ${score}分`);
+            return;
+        }
+        
+        // 判断评分档位
+        if (score < thresholds.lowScore) {
+            item.classList.add('javdb-low-score');
+            debugLog(`低分: ${score}分, ${reviewCount}人评价, 阈值${thresholds.lowScore}`);
+        } else if (score >= thresholds.highScore) {
+            item.classList.add('javdb-high-score');
+            debugLog(`高分: ${score}分, ${reviewCount}人评价, 阈值${thresholds.highScore}`);
+        } else {
+            debugLog(`正常: ${score}分, ${reviewCount}人评价`);
         }
     }
     
@@ -1370,33 +1344,44 @@
                 pointer-events: none;
             }
 
-            /* 屏蔽效果样式（看过想看） - 只暗淡不变灰 */
-            .movie-list .item.javdb-blocked:not(.javdb-low-score) {
+            /* === 影片状态样式 === */
+
+            /* 低分样式：整体变暗 */
+            .movie-list .item.javdb-low-score {
+                opacity: 0.3 !important;
+                filter: grayscale(80%) !important;
+                transition: all 0.3s ease !important;
+            }
+
+            .movie-list .item.javdb-low-score:hover {
                 opacity: 0.5 !important;
-                filter: none !important;
+                filter: grayscale(50%) !important;
+            }
+
+            /* 高分样式：绿色边框高亮 */
+            .movie-list .item.javdb-high-score {
+                box-shadow: 0 0 0 3px rgba(46, 204, 113, 0.9), 0 4px 12px rgba(46, 204, 113, 0.3) !important;
+                transition: all 0.3s ease !important;
+            }
+
+            .movie-list .item.javdb-high-score:hover {
+                box-shadow: 0 0 0 4px rgba(46, 204, 113, 1), 0 6px 20px rgba(46, 204, 113, 0.4) !important;
+            }
+
+            /* 看过样式：变暗 + 右上角标注（不在想看页面生效） */
+            body:not([data-page="wanted"]) .movie-list .item.javdb-watched {
+                opacity: 0.3 !important;
+                filter: grayscale(80%) !important;
                 transition: all 0.3s ease !important;
                 position: relative;
             }
 
-            .movie-list .item.javdb-blocked:not(.javdb-low-score):hover {
-                opacity: 0.7 !important;
-                filter: none !important;
+            body:not([data-page="wanted"]) .movie-list .item.javdb-watched:hover {
+                opacity: 0.5 !important;
+                filter: grayscale(50%) !important;
             }
 
-            /* 屏蔽标记 */
-            .movie-list .item.javdb-blocked::after {
-                content: '';
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                pointer-events: none;
-                z-index: 1;
-            }
-
-            /* 看过标记 */
-            .movie-list .item.javdb-watched::before {
+            body:not([data-page="wanted"]) .movie-list .item.javdb-watched::before {
                 content: '看过';
                 position: absolute;
                 top: 5px;
@@ -1411,8 +1396,20 @@
                 pointer-events: none;
             }
 
-            /* 想看标记 */
-            .movie-list .item.javdb-wanted::before {
+            /* 想看样式：变暗 + 右上角标注（不在看过页面生效） */
+            body:not([data-page="watched"]) .movie-list .item.javdb-wanted {
+                opacity: 0.3 !important;
+                filter: grayscale(80%) !important;
+                transition: all 0.3s ease !important;
+                position: relative;
+            }
+
+            body:not([data-page="watched"]) .movie-list .item.javdb-wanted:hover {
+                opacity: 0.5 !important;
+                filter: grayscale(50%) !important;
+            }
+
+            body:not([data-page="watched"]) .movie-list .item.javdb-wanted::before {
                 content: '想看';
                 position: absolute;
                 top: 5px;
@@ -1427,151 +1424,6 @@
                 pointer-events: none;
             }
 
-            /* 如果既是看过又是想看（优先显示看过） */
-            .movie-list .item.javdb-watched.javdb-wanted::before {
-                content: '看过';
-                background: rgba(231, 76, 60, 0.9);
-            }
-            
-            /* 看过页面中的想看影片特殊样式 - 不屏蔽但标记为可转移到看过 */
-            body[data-page="watched"] .movie-list .item.javdb-wanted:not(.javdb-blocked) {
-                border: 2px dashed rgba(243, 156, 18, 0.6) !important;
-                background: rgba(243, 156, 18, 0.05) !important;
-            }
-            
-            /* 想看页面中的看过影片特殊样式 - 不屏蔽但标记为看过 */
-            body[data-page="wanted"] .movie-list .item.javdb-watched:not(.javdb-blocked) {
-                border: 2px dashed rgba(231, 76, 60, 0.6) !important;
-                background: rgba(231, 76, 60, 0.05) !important;
-            }
-
-            /* 低分屏蔽样式（更暗更灰） */
-            .movie-list .item.javdb-low-score {
-                opacity: 0.2 !important;
-                filter: grayscale(90%) !important;
-                transition: all 0.3s ease !important;
-                position: relative;
-            }
-
-            .movie-list .item.javdb-low-score:hover {
-                opacity: 0.35 !important;
-                filter: grayscale(70%) !important;
-            }
-
-            /* 低分屏蔽标记 */
-            .movie-list .item.javdb-low-score::before {
-                content: '低分';
-                position: absolute;
-                top: 5px;
-                right: 5px;
-                background: rgba(149, 165, 166, 0.9);
-                color: white;
-                padding: 2px 6px;
-                border-radius: 3px;
-                font-size: 11px;
-                font-weight: bold;
-                z-index: 2;
-                pointer-events: none;
-            }
-
-            /* 正常评分样式（3.5-4.0分） */
-            .movie-list .item.javdb-normal-score {
-                /* 保持默认样式，不添加特殊效果 */
-            }
-
-            /* 高分高亮样式（4.0分以上）- 更明显 */
-            .movie-list .item.javdb-high-score {
-                box-shadow: 0 0 0 3px rgba(46, 204, 113, 0.8), 0 4px 12px rgba(46, 204, 113, 0.3) !important;
-                border-radius: 6px !important;
-                transition: all 0.3s ease !important;
-                transform: translateY(-2px) !important;
-                background: linear-gradient(135deg, rgba(46, 204, 113, 0.05), rgba(39, 174, 96, 0.02)) !important;
-            }
-
-            .movie-list .item.javdb-high-score:hover {
-                box-shadow: 0 0 0 4px rgba(46, 204, 113, 1), 0 6px 20px rgba(46, 204, 113, 0.4) !important;
-                transform: translateY(-4px) scale(1.02) !important;
-                background: linear-gradient(135deg, rgba(46, 204, 113, 0.1), rgba(39, 174, 96, 0.05)) !important;
-            }
-
-            /* 高分标记 */
-            .movie-list .item.javdb-high-score:not(.javdb-blocked):not(.javdb-low-score)::after {
-                content: '推荐';
-                position: absolute;
-                top: 5px;
-                left: 5px;
-                background: linear-gradient(135deg, #2ecc71, #27ae60) !important;
-                color: white;
-                padding: 4px 10px;
-                border-radius: 6px;
-                font-size: 13px;
-                font-weight: bold;
-                z-index: 3;
-                pointer-events: none;
-                box-shadow: 0 3px 8px rgba(46, 204, 113, 0.4);
-                text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-            }
-
-            /* 优秀影片样式（4.5分以上且评价人数多）- 超级明显 */
-            .movie-list .item.javdb-excellent {
-                box-shadow: 0 0 0 4px rgba(241, 196, 15, 0.9), 0 6px 20px rgba(241, 196, 15, 0.4), 0 0 30px rgba(241, 196, 15, 0.2) !important;
-                border-radius: 8px !important;
-                transition: all 0.3s ease !important;
-                transform: translateY(-3px) !important;
-                background: linear-gradient(135deg, rgba(241, 196, 15, 0.1), rgba(243, 156, 18, 0.05)) !important;
-                position: relative;
-                overflow: visible;
-            }
-
-            .movie-list .item.javdb-excellent:hover {
-                box-shadow: 0 0 0 6px rgba(241, 196, 15, 1), 0 8px 30px rgba(241, 196, 15, 0.6), 0 0 40px rgba(241, 196, 15, 0.3) !important;
-                transform: translateY(-6px) scale(1.03) !important;
-                background: linear-gradient(135deg, rgba(241, 196, 15, 0.15), rgba(243, 156, 18, 0.08)) !important;
-            }
-
-            /* 优秀影片标记 */
-            .movie-list .item.javdb-excellent:not(.javdb-blocked):not(.javdb-low-score)::after {
-                content: '必看';
-                position: absolute;
-                top: 5px;
-                left: 5px;
-                background: linear-gradient(135deg, #f1c40f, #f39c12) !important;
-                color: white;
-                padding: 5px 12px;
-                border-radius: 8px;
-                font-size: 14px;
-                font-weight: bold;
-                z-index: 4;
-                pointer-events: none;
-                box-shadow: 0 4px 12px rgba(241, 196, 15, 0.5);
-                text-shadow: 0 1px 3px rgba(0,0,0,0.3);
-                animation: excellentPulse 2s infinite;
-            }
-
-            /* 优秀影片闪光效果 */
-            @keyframes excellentPulse {
-                0% {
-                    box-shadow: 0 4px 12px rgba(241, 196, 15, 0.5), 0 0 0 0 rgba(241, 196, 15, 0.7);
-                }
-                70% {
-                    box-shadow: 0 4px 12px rgba(241, 196, 15, 0.5), 0 0 0 15px rgba(241, 196, 15, 0);
-                }
-                100% {
-                    box-shadow: 0 4px 12px rgba(241, 196, 15, 0.5), 0 0 0 0 rgba(241, 196, 15, 0);
-                }
-            }
-
-            /* 屏蔽的影片不显示评分高亮标记 */
-            .movie-list .item.javdb-blocked.javdb-high-score::after,
-            .movie-list .item.javdb-blocked.javdb-excellent::after {
-                display: none;
-            }
-
-            /* 低分屏蔽的影片不显示评分高亮标记 */
-            .movie-list .item.javdb-low-score.javdb-high-score::after,
-            .movie-list .item.javdb-low-score.javdb-excellent::after {
-                display: none;
-            }
         `;
         
         // 只添加一次样式
@@ -3102,20 +2954,22 @@
         };
         
         if (mode === 'overwrite') {
-            // 覆盖模式：直接替换并排序
+            // 覆盖模式：直接替换，看过优先
             result.watched.before = GM_getValue(CONFIG.watchedStorageKey, []).length;
             result.wanted.before = GM_getValue(CONFIG.wantedStorageKey, []).length;
             
-            const sortedWatched = [...new Set(importWatched)].sort();
-            const sortedWanted = [...new Set(importWanted)].sort();
+            // 看过优先：从想看中移除看过中已有的番号
+            const watchedSet = new Set(importWatched);
+            const finalWatched = [...new Set(importWatched)].sort();
+            const finalWanted = importWanted.filter(code => !watchedSet.has(code)).sort();
             
-            GM_setValue(CONFIG.watchedStorageKey, sortedWatched);
-            GM_setValue(CONFIG.wantedStorageKey, sortedWanted);
+            GM_setValue(CONFIG.watchedStorageKey, finalWatched);
+            GM_setValue(CONFIG.wantedStorageKey, finalWanted);
             
-            result.watched.after = sortedWatched.length;
-            result.wanted.after = sortedWanted.length;
-            result.watched.added = sortedWatched.length;
-            result.wanted.added = sortedWanted.length;
+            result.watched.after = finalWatched.length;
+            result.wanted.after = finalWanted.length;
+            result.watched.added = finalWatched.length;
+            result.wanted.added = finalWanted.length;
             
         } else {
             // 合并模式：合并、去重并排序
@@ -3125,26 +2979,25 @@
             result.watched.before = currentWatched.length;
             result.wanted.before = currentWanted.length;
             
-            // 合并看过列表并排序
+            // 合并看过列表
             const mergedWatched = [...new Set([...currentWatched, ...importWatched])].sort();
-            GM_setValue(CONFIG.watchedStorageKey, mergedWatched);
-            result.watched.after = mergedWatched.length;
-            result.watched.added = mergedWatched.length - currentWatched.length;
             
-            // 合并想看列表并排序
+            // 合并想看列表
             const mergedWanted = [...new Set([...currentWanted, ...importWanted])].sort();
-            GM_setValue(CONFIG.wantedStorageKey, mergedWanted);
-            result.wanted.after = mergedWanted.length;
-            result.wanted.added = mergedWanted.length - currentWanted.length;
             
-            // 处理跨列表重复：如果一个番号同时在看过和想看中，从想看中移除
-            const crossDuplicates = mergedWatched.filter(code => mergedWanted.includes(code));
-            if (crossDuplicates.length > 0) {
-                const newWanted = mergedWanted.filter(code => !mergedWatched.includes(code)).sort();
-                GM_setValue(CONFIG.wantedStorageKey, newWanted);
-                result.wanted.after = newWanted.length;
-                debugLog(`跨列表重复移除: ${crossDuplicates.length} 个番号`);
-            }
+            // 看过优先：从想看中移除看过中已有的番号
+            const watchedSet = new Set(mergedWatched);
+            const finalWanted = mergedWanted.filter(code => !watchedSet.has(code)).sort();
+            
+            GM_setValue(CONFIG.watchedStorageKey, mergedWatched);
+            GM_setValue(CONFIG.wantedStorageKey, finalWanted);
+            
+            result.watched.after = mergedWatched.length;
+            result.wanted.after = finalWanted.length;
+            result.watched.added = mergedWatched.length - currentWatched.length;
+            result.wanted.added = finalWanted.length - currentWanted.length;
+            
+            debugLog(`合并完成 - 看过: ${result.watched.before} -> ${result.watched.after}, 想看: ${result.wanted.before} -> ${result.wanted.after}`);
         }
         
         // 更新UI
