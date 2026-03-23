@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.9.0
-// @description  [核心] 看过/想看影片自动屏蔽，智能评分分级（低分/高分）；[功能] 批量导入，大图预览，数据备份；[支持] 欧美区番号
+// @version      2.0.0
+// @description  [核心] 看过/想看影片自动屏蔽，智能评分分级（低分/高分）；[功能] 搜索精确匹配高亮，批量导入，详情页同步(含删除)，大图预览，数据备份；[支持] 欧美区番号
 // @author       RiTian96
 // @match        https://javdb.com/*
 // @icon         https://javdb.com/favicon.ico
@@ -13,13 +13,16 @@
 // @grant        GM_listValues
 // @license      MIT
 // @updateURL    https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/javdb-manager.user.js
-// @downloadURL  https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/javdb-manager.user.js
+// @downloadURL    https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/javdb-manager.user.js
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
-    // 配置项
+    /**
+     * === JavDB Manager 核心配置 ===
+     * 包含存储键名、功能开关及全局状态
+     */
     const CONFIG = {
         watchedStorageKey: 'javdb_watched_codes',
         wantedStorageKey: 'javdb_wanted_codes',
@@ -27,10 +30,10 @@
         isImporting: false,
         importedCount: 0,
         totalCount: 0,
-        
+
         DEBUG: false, // 生产环境设为false，调试时设为true
         panelCreated: false, // 防止重复创建面板
-        
+
         // 功能开关
         enableWatchedBlock: true, // 是否启用看过屏蔽
         enableWantedBlock: true, // 是否启用想看屏蔽
@@ -44,7 +47,7 @@
             console.log('[JavDB Manager]', ...args);
         }
     }
-    
+
     // 从影片项中提取番号（支持日式和欧美区）
     // 规则：
     // - 日式番号（去除日期后仍有数字）：只保留番号，不需要标题，全部大写
@@ -56,15 +59,15 @@
             const strongElement = videoTitle.querySelector('strong');
             if (strongElement) {
                 const strongText = strongElement.textContent.trim();
-                
+
                 // 先去除日期格式，再判断是否为欧美区
                 let cleanedStrong = strongText;
                 cleanedStrong = cleanedStrong.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '');
                 cleanedStrong = cleanedStrong.replace(/\.\d{4}\.\d{2}\.\d{2}/g, '');
-                
+
                 // 判断去除日期后是否为纯字母（欧美区）
                 const isPureLetters = /^[a-zA-Z]+$/.test(cleanedStrong.replace(/\s+/g, ''));
-                
+
                 if (isPureLetters) {
                     // 欧美区：使用完整 title（番号+标题），去掉日期
                     let fullTitle = videoTitle.textContent.trim();
@@ -84,14 +87,14 @@
         debugLog('无法从影片项中提取番号');
         return null;
     }
-    
+
     // 不区分大小写和空格的匹配函数
     function isCodeMatch(code1, code2) {
         // 标准化：去除空格，转换为小写
         const normalize = (str) => str.replace(/\s+/g, '').toLowerCase();
         return normalize(code1) === normalize(code2);
     }
-    
+
     // 不区分大小写和空格的前缀匹配函数
     function isCodePrefixMatch(prefix, fullCode) {
         const normalize = (str) => str.replace(/\s+/g, '').toLowerCase();
@@ -104,19 +107,19 @@
     // - 日厂（去除日期后仍有数字）：全部大写，只保留字母、数字、-、_
     function normalizeCode(code) {
         if (!code || typeof code !== 'string') return code;
-        
+
         // 先去除空格
         let normalized = code.replace(/\s+/g, '');
-        
+
         // 去除日期格式（欧美区常见）
         // 格式1: .YY.MM.DD 如 .26.02.26
         // 格式2: .YYYY.MM.DD 如 .2026.02.26
         normalized = normalized.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '');
         normalized = normalized.replace(/\.\d{4}\.\d{2}\.\d{2}/g, '');
-        
+
         // 判断是否为纯字母（欧美区）- 去除日期后再判断
         const isPureLetters = /^[a-zA-Z]+$/.test(normalized);
-        
+
         if (isPureLetters) {
             // 纯字母（欧美区）：全部大写，保留完整标题
             return normalized.toUpperCase();
@@ -133,7 +136,7 @@
     // 前缀去重：删除是其他番号前缀的较短番号
     function removePrefixDuplicates(codeList) {
         const toRemove = new Set();
-        
+
         for (let i = 0; i < codeList.length; i++) {
             for (let j = 0; j < codeList.length; j++) {
                 if (i !== j && codeList[j].startsWith(codeList[i])) {
@@ -143,7 +146,7 @@
                 }
             }
         }
-        
+
         return {
             codes: codeList.filter((_, index) => !toRemove.has(index)),
             removed: toRemove.size
@@ -157,26 +160,26 @@
     // 3. 如果不匹配标准格式，只保留字母、数字、-、_
     function cleanCodeForNewRule(code) {
         if (!code || typeof code !== 'string') return null;
-        
+
         // 先去除空格
         let cleaned = code.replace(/\s+/g, '');
-        
+
         // 去除日期格式
         cleaned = cleaned.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '');
         cleaned = cleaned.replace(/\.\d{4}\.\d{2}\.\d{2}/g, '');
-        
+
         // 统一转大写
         cleaned = cleaned.toUpperCase();
-        
+
         // 尝试匹配标准日厂番号格式（优先匹配，只保留番号部分）
-        
+
         // 格式1: 带连接符 XXX-123 或 XXX_123（字母或数字开头）
         // 如: FCP-089, 111315_189, ABC_123
         const matchWithSeparator = cleaned.match(/^([A-Z0-9]+[-_][A-Z0-9]+)/);
         if (matchWithSeparator) {
             return matchWithSeparator[1];
         }
-        
+
         // 格式2: 纯字母+数字（无连接符）XXX123 或 XXX123XXX
         // 如: FZ65, ABC123
         // 但要避免把标题里的 VOL65AV 也混进去，只取第一个"字母+数字"组合
@@ -184,14 +187,14 @@
         if (matchAlphaNum) {
             return matchAlphaNum[1];
         }
-        
+
         // 格式3: 纯数字开头（一些特殊番号）
         // 如: 123456
         const matchPureNum = cleaned.match(/^([0-9]+)/);
         if (matchPureNum && !cleaned.match(/^[0-9]+[A-Z]/)) {
             return matchPureNum[1];
         }
-        
+
         // 如果都不匹配，保留全部字母、数字、-、_
         cleaned = cleaned.replace(/[^A-Z0-9\-_]/g, '');
         return cleaned || null;
@@ -217,7 +220,7 @@
         let processedWatched = watchedCodes
             .map(code => cleanCodeForNewRule(code))
             .filter(code => code); // 移除无效番号
-        
+
         result.removed.invalid = watchedCodes.length - processedWatched.length;
 
         // 去重
@@ -244,7 +247,7 @@
 
         // 检查是否有变化
         const watchedChanged = processedWatched.length !== watchedCodes.length ||
-                               JSON.stringify(processedWatched) !== JSON.stringify(watchedCodes);
+            JSON.stringify(processedWatched) !== JSON.stringify(watchedCodes);
         if (watchedChanged) {
             GM_setValue(CONFIG.watchedStorageKey, processedWatched);
             result.changed = true;
@@ -286,7 +289,7 @@
 
         // 检查是否有变化
         const wantedChanged = processedWanted.length !== wantedCodes.length ||
-                              JSON.stringify(processedWanted) !== JSON.stringify(wantedCodes);
+            JSON.stringify(processedWanted) !== JSON.stringify(wantedCodes);
         if (wantedChanged) {
             GM_setValue(CONFIG.wantedStorageKey, processedWanted);
             result.changed = true;
@@ -329,24 +332,24 @@
     function findMatchingCode(code, codeList) {
         return codeList.find(savedCode => isCodeMatch(code, savedCode));
     }
-    
+
     // 查找前缀匹配的番号（不区分大小写和空格）
     function findPrefixMatchingCode(prefix, codeList) {
         return codeList.filter(savedCode => isCodePrefixMatch(prefix, savedCode));
     }
-    
+
     // 创建开关组件
     function createSwitch(label, configKey, isChecked) {
         const switchItem = document.createElement('div');
         switchItem.className = 'switch-item';
-        
+
         const switchLabel = document.createElement('label');
         switchLabel.className = 'switch-label';
         switchLabel.textContent = label;
-        
+
         const switchWrapper = document.createElement('label');
         switchWrapper.className = 'switch';
-        
+
         const switchInput = document.createElement('input');
         switchInput.type = 'checkbox';
         switchInput.checked = isChecked;
@@ -356,16 +359,16 @@
             applyBlockEffect(); // 重新应用效果
             debugLog(`${label}开关: ${e.target.checked ? '开启' : '关闭'}`);
         });
-        
+
         const slider = document.createElement('span');
         slider.className = 'slider';
-        
+
         switchWrapper.appendChild(switchInput);
         switchWrapper.appendChild(slider);
-        
+
         switchItem.appendChild(switchLabel);
         switchItem.appendChild(switchWrapper);
-        
+
         return switchItem;
     }
 
@@ -373,14 +376,14 @@
     function debugScoreStructure() {
         const movieItems = document.querySelectorAll('.movie-list .item');
         console.log(`找到 ${movieItems.length} 个影片项`);
-        
+
         if (movieItems.length > 0) {
             const firstItem = movieItems[0];
             console.log('第一个影片项的HTML结构:', firstItem.innerHTML.substring(0, 500));
-            
+
             const scoreElements = firstItem.querySelectorAll('.score, .score .value, .score > .value');
             console.log('找到的评分元素:', scoreElements.length);
-            
+
             scoreElements.forEach((el, index) => {
                 console.log(`评分元素${index}:`, {
                     className: el.className,
@@ -397,7 +400,7 @@
         const savedWantedBlock = localStorage.getItem('javdb_enable_wanted_block');
         const savedLowScoreBlock = localStorage.getItem('javdb_enable_low_score_block');
         const savedImagePreview = localStorage.getItem('javdb_enable_image_preview');
-        
+
         if (savedWatchedBlock !== null) {
             CONFIG.enableWatchedBlock = savedWatchedBlock === 'true';
         }
@@ -410,7 +413,7 @@
         if (savedImagePreview !== null) {
             CONFIG.enableImagePreview = savedImagePreview === 'true';
         }
-        
+
         debugLog('加载配置:', {
             enableWatchedBlock: CONFIG.enableWatchedBlock,
             enableWantedBlock: CONFIG.enableWantedBlock,
@@ -418,7 +421,7 @@
             enableImagePreview: CONFIG.enableImagePreview
         });
     }
-    
+
     // 保存配置
     function saveConfig() {
         localStorage.setItem('javdb_enable_watched_block', CONFIG.enableWatchedBlock.toString());
@@ -432,7 +435,7 @@
             enableImagePreview: CONFIG.enableImagePreview
         });
     }
-    
+
     // 初始化
     function init() {
         if (CONFIG.panelCreated) return;
@@ -441,9 +444,9 @@
         loadConfig();
 
         // 确定当前页面类型
-        CONFIG.currentPageType = window.location.href.includes('watched_videos') ? 'watched' : 
-                                window.location.href.includes('want_watch_videos') ? 'wanted' : null;
-        
+        CONFIG.currentPageType = window.location.href.includes('watched_videos') ? 'watched' :
+            window.location.href.includes('want_watch_videos') ? 'wanted' : null;
+
         // 设置页面标识，供CSS使用
         if (CONFIG.currentPageType === 'watched') {
             document.body.setAttribute('data-page', 'watched');
@@ -452,20 +455,20 @@
         } else {
             document.body.removeAttribute('data-page');
         }
-        
+
         // 创建全局悬浮窗
         createGlobalFloatingWindow();
         CONFIG.panelCreated = true;
-        
+
         // 初始化大图预览组件
         initMagicLens();
-        
+
         // 应用屏蔽效果
         applyBlockEffect();
-        
+
         // 监听页面变化，动态应用屏蔽效果
         observePageChanges();
-        
+
         // 检查是否有待处理的导入任务
         const pendingImport = localStorage.getItem('javdb_pending_import');
         if (pendingImport && CONFIG.currentPageType === pendingImport) {
@@ -475,13 +478,13 @@
                 localStorage.removeItem('javdb_pending_import'); // 清除待处理状态
             }, 1000);
         }
-        
+
         // 检查是否是翻页后的继续导入
         const isImporting = localStorage.getItem('javdb_importing') === 'true';
         if (isImporting && CONFIG.currentPageType) {
             const importType = localStorage.getItem('javdb_import_type');
             const importedCount = localStorage.getItem('javdb_imported_count');
-            
+
             if (importType === CONFIG.currentPageType) {
                 // 延迟一下确保页面完全加载
                 setTimeout(() => {
@@ -489,16 +492,16 @@
                     CONFIG.isImporting = true;
                     CONFIG.importedCount = importedCount ? parseInt(importedCount) : 0;
                     CONFIG.currentPageType = importType;
-                    
+
                     // 更新UI
                     updateGlobalCount();
-                    
+
                     // 继续导入
                     extractAndSaveCurrentPage();
                 }, 2000); // 翻页需要更长的等待时间
             }
         }
-        
+
         // 添加点击按钮自动导入功能
         if (window.location.pathname.includes('/v/')) {
             // 影片详情页，绑定想看/看過按钮
@@ -506,40 +509,78 @@
         }
     }
 
+    // 获取当前页面搜索词
+    function getSearchQuery() {
+        const searchInput = document.getElementById('video-search');
+        return searchInput ? searchInput.value.trim() : '';
+    }
+
+    // 万能标准化匹配逻辑
+    function isSearchMatch(query, videoCode) {
+        if (!query || !videoCode) return false;
+
+        // 标准化：转大写，只保留字母和数字
+        const sQuery = query.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const sCode = videoCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+        if (!sQuery || !sCode) return false;
+
+        // 1. 完全相等（标准化后）
+        if (sQuery === sCode) return true;
+
+        // 2. 针对 FC2 的特殊处理
+        // 如果搜纯数字，匹配 FC2 + 数字
+        if (/^\d+$/.test(sQuery)) {
+            if (sCode === 'FC2' + sQuery) return true;
+        }
+
+        // 3. 针对搜 FC2 数字却漏搜字母的特殊处理
+        if (sQuery === 'FC2' + sCode) return true;
+
+        return false;
+    }
+
     // 屏蔽功能相关函数
     // 应用屏蔽效果和高亮评分
     function applyBlockEffect() {
         debugLog('应用屏蔽效果');
-        
+
         // 查找所有影片项
         const movieItems = document.querySelectorAll('.movie-list .item');
         debugLog(`找到 ${movieItems.length} 个影片项`);
-        
+
         movieItems.forEach(item => {
             // 清除所有相关类
-            item.classList.remove('javdb-blocked', 'javdb-watched', 'javdb-wanted', 
-                               'javdb-low-score', 'javdb-normal-score', 'javdb-high-score', 'javdb-excellent');
-            
+            item.classList.remove('javdb-blocked', 'javdb-watched', 'javdb-wanted',
+                'javdb-low-score', 'javdb-normal-score', 'javdb-high-score', 'javdb-excellent', 'javdb-search-match');
+
             // 应用屏蔽效果（看过/想看）
             applyBlockEffectInternal(item);
-            
+
             // 应用评分效果（低分屏蔽+高亮）
-        applyScoreHighlight(item);
+            applyScoreHighlight(item);
         });
     }
-    
+
     // 内部屏蔽效果应用函数
     function applyBlockEffectInternal(item) {
         // 获取已保存的番号列表
         const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
         const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
-        
+
         // 使用通用函数提取番号
         const code = getVideoCodeFromItem(item);
-        
+
         if (code) {
+            // 1. 处理精确搜索匹配（金边高亮优先）
+            const query = getSearchQuery();
+            if (isSearchMatch(query, code)) {
+                item.classList.add('javdb-search-match');
+                debugLog(`精确搜索匹配: ${code}`);
+            }
+
             let shouldBlock = false;
-            
+
             // 根据当前页面类型决定屏蔽策略
             // 在看过页面，只屏蔽看过的，不屏蔽想看的
             if (CONFIG.currentPageType === 'watched') {
@@ -577,7 +618,7 @@
                     shouldBlock = true;
                     debugLog(`其他页面屏蔽看过番号: ${code}`);
                 }
-                
+
                 // 检查是否在想看列表中
                 if (findMatchingCode(code, wantedCodes) && CONFIG.enableWantedBlock) {
                     item.classList.add('javdb-wanted');
@@ -585,14 +626,14 @@
                     debugLog(`其他页面屏蔽想看番号: ${code}`);
                 }
             }
-            
+
             // 如果需要屏蔽，添加屏蔽样式
             if (shouldBlock) {
                 item.classList.add('javdb-blocked');
             }
         }
     }
-    
+
     // 根据评价人数获取评分阈值
     function getScoreThresholds(reviewCount) {
         if (reviewCount < 10) {
@@ -613,34 +654,34 @@
     // 应用评分效果
     function applyScoreHighlight(item) {
         // 尝试多种可能的评分元素选择器
-        let scoreElement = item.querySelector('.score .value') || 
-                          item.querySelector('.score > .value') ||
-                          item.querySelector('.score');
-        
+        let scoreElement = item.querySelector('.score .value') ||
+            item.querySelector('.score > .value') ||
+            item.querySelector('.score');
+
         if (!scoreElement) return;
-        
+
         // 获取评分文本，可能包含HTML编码
         let scoreText = scoreElement.textContent || scoreElement.innerText || '';
         scoreText = scoreText.trim();
-        
+
         // 解码HTML实体
         scoreText = scoreText.replace(/=E5=88=86/g, '分')
-                           .replace(/=E4=BA=BA/g, '人')
-                           .replace(/=E7=94=A8/g, '用')
-                           .replace(/=E8=A9=95=E5=83=B9/g, '評價')
-                           .replace(/=E7=9C=8B/g, '看')
-                           .replace(/=E7=94=B1/g, '由');
-        
+            .replace(/=E4=BA=BA/g, '人')
+            .replace(/=E7=94=A8/g, '用')
+            .replace(/=E8=A9=95=E5=83=B9/g, '評價')
+            .replace(/=E7=9C=8B/g, '看')
+            .replace(/=E7=94=B1/g, '由');
+
         // 匹配评分格式：X.XX分, 由XXX人評價
         const scoreMatch = scoreText.match(/([\d.]+)分[,，]\s*由(\d+)人(?:評價|评价)/);
-        
+
         // 清除之前的评分相关类
         item.classList.remove('javdb-low-score', 'javdb-high-score');
-        
+
         if (!CONFIG.enableLowScoreBlock) return;
-        
+
         let score, reviewCount;
-        
+
         if (scoreMatch) {
             score = parseFloat(scoreMatch[1]);
             reviewCount = parseInt(scoreMatch[2]);
@@ -654,16 +695,16 @@
             score = parseFloat(looseMatch[1]);
             reviewCount = 0; // 无法获取人数时按0处理
         }
-        
+
         // 获取阈值
         const thresholds = getScoreThresholds(reviewCount);
-        
+
         // 样本太小，不做判断
         if (thresholds.lowScore === null) {
             debugLog(`评价人数较少(${reviewCount}人)，正常显示: ${score}分`);
             return;
         }
-        
+
         // 判断评分档位
         if (score < thresholds.lowScore) {
             item.classList.add('javdb-low-score');
@@ -675,20 +716,20 @@
             debugLog(`正常: ${score}分, ${reviewCount}人评价`);
         }
     }
-    
+
     // 监听页面变化
     function observePageChanges() {
         // 创建MutationObserver监听DOM变化
         const observer = new MutationObserver((mutations) => {
             let shouldReapply = false;
-            
+
             mutations.forEach((mutation) => {
                 // 检查是否有新的影片项添加
                 if (mutation.type === 'childList') {
                     mutation.addedNodes.forEach((node) => {
                         if (node.nodeType === Node.ELEMENT_NODE) {
                             // 如果是影片列表容器或包含影片项的元素
-                            if (node.classList?.contains('movie-list') || 
+                            if (node.classList?.contains('movie-list') ||
                                 node.querySelector?.('.movie-list .item')) {
                                 shouldReapply = true;
                             }
@@ -696,7 +737,7 @@
                     });
                 }
             });
-            
+
             // 如果有变化，重新应用屏蔽效果
             if (shouldReapply) {
                 setTimeout(() => {
@@ -704,24 +745,24 @@
                 }, 500); // 延迟一下确保DOM完全加载
             }
         });
-        
+
         // 开始观察整个文档
         observer.observe(document.body, {
             childList: true,
             subtree: true
         });
-        
+
         // 监听页面导航（SPA应用）
         let lastUrl = window.location.href;
         const urlObserver = new MutationObserver(() => {
             const currentUrl = window.location.href;
             if (currentUrl !== lastUrl) {
                 lastUrl = currentUrl;
-                
+
                 // 更新页面类型和标识
-                CONFIG.currentPageType = window.location.href.includes('watched_videos') ? 'watched' : 
-                                        window.location.href.includes('want_watch_videos') ? 'wanted' : null;
-                
+                CONFIG.currentPageType = window.location.href.includes('watched_videos') ? 'watched' :
+                    window.location.href.includes('want_watch_videos') ? 'wanted' : null;
+
                 // 设置页面标识，供CSS使用
                 if (CONFIG.currentPageType === 'watched') {
                     document.body.setAttribute('data-page', 'watched');
@@ -730,13 +771,13 @@
                 } else {
                     document.body.removeAttribute('data-page');
                 }
-                
+
                 setTimeout(() => {
                     applyBlockEffect();
                 }, 1000); // 页面切换后延迟应用
             }
         });
-        
+
         urlObserver.observe(document.body, {
             childList: true,
             subtree: true
@@ -748,7 +789,7 @@
      * 大图预览组件 (Magic Lens)
      * =================================================================
      */
-    
+
     // 大图预览状态
     const LensState = {
         isVisible: false,
@@ -765,22 +806,22 @@
 
         // 绑定事件
         bindMagicLensEvents();
-        
+
         debugLog('大图预览组件初始化完成');
     }
 
     // 绑定大图预览事件
     function bindMagicLensEvents() {
         // 鼠标悬停显示大图
-        document.body.addEventListener('mouseover', function(e) {
+        document.body.addEventListener('mouseover', function (e) {
             // 检查开关状态
             if (!CONFIG.enableImagePreview) return;
-            
+
             const item = e.target.closest('.movie-list .item');
             if (item) {
                 const lens = document.getElementById('javdb-magic-lens');
                 const lensImg = document.getElementById('javdb-lens-img');
-                
+
                 if (!lens || !lensImg) return;
 
                 // 获取封面图片
@@ -788,7 +829,7 @@
                 if (!coverImg) return;
 
                 let imgSrc = coverImg.src;
-                
+
                 // 尝试获取更大的图片：JavDB 图片 URL 规则
                 // 缩略图格式: https://c0.jdbstatic.com/covers/xx/XXXXXXX.jpg
                 // 大图格式: https://c0.jdbstatic.com/covers/xx/XXXXXXX.jpg (相同)
@@ -805,8 +846,8 @@
 
                     lensImg.style.opacity = '0';
                     lensImg.src = imgSrc;
-                    lensImg.onload = () => { 
-                        if (lensImg) lensImg.style.opacity = '1'; 
+                    lensImg.onload = () => {
+                        if (lensImg) lensImg.style.opacity = '1';
                     };
                     lensImg.onerror = () => {
                         debugLog("封面图片加载失败:", imgSrc);
@@ -822,14 +863,14 @@
         });
 
         // 鼠标移出隐藏大图
-        document.body.addEventListener('mouseout', function(e) {
+        document.body.addEventListener('mouseout', function (e) {
             // 检查开关状态
             if (!CONFIG.enableImagePreview) return;
-            
+
             const item = e.target.closest('.movie-list .item');
             const related = e.relatedTarget;
             const lens = document.getElementById('javdb-magic-lens');
-            
+
             if (item && (!related || !item.contains(related))) {
                 LensState.isVisible = false;
                 if (lens) lens.style.display = 'none';
@@ -837,13 +878,13 @@
         });
 
         // 智能避让：根据鼠标位置决定大图显示在左边还是右边
-        document.addEventListener('mousemove', function(e) {
+        document.addEventListener('mousemove', function (e) {
             // 检查开关状态
             if (!CONFIG.enableImagePreview || !LensState.isVisible) return;
 
             const lens = document.getElementById('javdb-magic-lens');
             if (!lens) return;
-            
+
             const screenWidth = window.innerWidth;
             const mouseX = e.clientX;
             const margin = 30;
@@ -872,12 +913,12 @@
         // 判断是否在导入页面或正在导入
         const isImportPage = CONFIG.currentPageType === 'watched' || CONFIG.currentPageType === 'wanted';
         const isImporting = CONFIG.isImporting || localStorage.getItem('javdb_importing') === 'true';
-        
+
         // 创建面板
         const floatingWindow = document.createElement('div');
         floatingWindow.id = 'javdb-global-floating-window';
         floatingWindow.className = 'javdb-manager-panel minimized';
-        
+
         // 添加样式
         const style = document.createElement('style');
         style.textContent = `
@@ -1346,6 +1387,35 @@
 
             /* === 影片状态样式 === */
 
+            /* 搜索精确匹配样式：金边 + 呼吸灯动画 */
+            .movie-list .item.javdb-search-match {
+                box-shadow: 0 0 0 4px #ffd700, 0 0 20px rgba(255, 215, 0, 0.6) !important;
+                animation: javdb-gold-breathing 2s infinite alternate !important;
+                z-index: 5 !important;
+                transition: all 0.3s ease !important;
+                opacity: 1 !important; /* 精确匹配不透明 */
+                filter: none !important; /* 精确匹配不置灰 */
+            }
+
+            /* 叠加态：如果是搜索匹配 且 是高分推荐 */
+            .movie-list .item.javdb-search-match.javdb-high-score {
+                box-shadow: 
+                    0 0 0 3px #2ecc71,           /* 内层绿边 */
+                    0 0 0 6px #ffd700,           /* 外层金边 */
+                    0 0 25px rgba(255, 215, 0, 0.8) !important;
+            }
+
+            @keyframes javdb-gold-breathing {
+                from { 
+                    transform: scale(1.0); 
+                    box-shadow: 0 0 0 4px #ffd700, 0 0 15px rgba(255, 215, 0, 0.5); 
+                }
+                to { 
+                    transform: scale(1.03); 
+                    box-shadow: 0 0 0 5px #ffd700, 0 0 30px rgba(255, 215, 0, 0.9); 
+                }
+            }
+
             /* 低分样式：整体变暗 */
             .movie-list .item.javdb-low-score {
                 opacity: 0.3 !important;
@@ -1425,7 +1495,7 @@
             }
 
         `;
-        
+
         // 只添加一次样式
         if (!document.querySelector('style[data-javdb-manager]')) {
             style.setAttribute('data-javdb-manager', 'true');
@@ -1613,26 +1683,26 @@
         smartContainer.appendChild(smartActions);
 
         manageContent.appendChild(smartContainer);
-        
+
         // 添加功能开关
         const switchContainer = document.createElement('div');
         switchContainer.className = 'switch-container';
         switchContainer.style.marginTop = '15px';
         switchContainer.style.paddingTop = '15px';
         switchContainer.style.borderTop = '1px solid rgba(255,255,255,0.2)';
-        
+
         // 看过屏蔽开关
         const watchedSwitch = createSwitch('看过屏蔽', 'enableWatchedBlock', CONFIG.enableWatchedBlock);
         switchContainer.appendChild(watchedSwitch);
-        
+
         // 想看屏蔽开关
         const wantedSwitch = createSwitch('想看屏蔽', 'enableWantedBlock', CONFIG.enableWantedBlock);
         switchContainer.appendChild(wantedSwitch);
-        
+
         // 低分屏蔽开关（同时控制高分高亮）
         const scoreSwitch = createSwitch('评分功能', 'enableLowScoreBlock', CONFIG.enableLowScoreBlock);
         switchContainer.appendChild(scoreSwitch);
-        
+
         // 大图预览开关
         const imagePreviewSwitch = createSwitch('大图预览', 'enableImagePreview', CONFIG.enableImagePreview);
         switchContainer.appendChild(imagePreviewSwitch);
@@ -1668,22 +1738,22 @@
         cleanupButton.textContent = '🗑️ 清空所有数据';
         cleanupButton.addEventListener('click', (e) => {
             e.stopPropagation();
-            
+
             const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
             const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
             const totalCount = watchedCodes.length + wantedCodes.length;
-            
+
             if (totalCount === 0) {
                 showMessage('没有数据需要清空', 'warning');
                 return;
             }
-            
+
             // 二次确认对话框
             if (confirm(`⚠️ 确认清空所有数据？\n\n此操作将删除：\n• 看过列表：${watchedCodes.length} 个\n• 想看列表：${wantedCodes.length} 个\n\n此功能用于清除过去错误格式的历史数据，清空后不可恢复！`)) {
                 // 清空数据
                 GM_setValue(CONFIG.watchedStorageKey, []);
                 GM_setValue(CONFIG.wantedStorageKey, []);
-                
+
                 // 显示结果
                 cleanupResult.style.display = 'block';
                 cleanupResult.style.background = 'rgba(231, 76, 60, 0.2)';
@@ -1694,10 +1764,10 @@
                     <div style="font-weight: bold; margin-bottom: 5px;">🗑️ 数据已清空</div>
                     <div style="font-size: 11px;">已删除 ${totalCount} 个番号</div>
                 `;
-                
+
                 // 更新显示
                 updateGlobalCount();
-                
+
                 // 重新应用屏蔽效果
                 setTimeout(() => {
                     applyBlockEffect();
@@ -1715,7 +1785,7 @@
             debugContainer.style.marginTop = '15px';
             debugContainer.style.paddingTop = '15px';
             debugContainer.style.borderTop = '1px solid rgba(255,255,255,0.2)';
-            
+
             const debugButton = document.createElement('button');
             debugButton.className = 'manager-button';
             debugButton.style.background = '#9b59b6';
@@ -1726,7 +1796,7 @@
                 debugScoreStructure();
                 applyBlockEffect(); // 重新应用效果
             });
-            
+
             debugContainer.appendChild(debugButton);
             manageContent.appendChild(debugContainer);
         }
@@ -1749,32 +1819,32 @@
         floatingWindow.appendChild(closeBtn);
 
         // 事件处理
-        floatingWindow.addEventListener('click', function(e) {
+        floatingWindow.addEventListener('click', function (e) {
             // 如果点击的是关闭按钮，不处理
             if (e.target.classList.contains('close-button')) {
                 return;
             }
-            
+
             // 如果点击的是输入元素、候选区域或按钮，不处理最小化逻辑
-            if (e.target.tagName === 'INPUT' || 
-                e.target.tagName === 'SELECT' || 
+            if (e.target.tagName === 'INPUT' ||
+                e.target.tagName === 'SELECT' ||
                 e.target.tagName === 'TEXTAREA' ||
                 e.target.closest('.smart-result') ||
                 e.target.closest('.smart-actions') ||
                 e.target.tagName === 'BUTTON') {
                 return;
             }
-            
+
             // 如果面板已最小化，则展开
             if (floatingWindow.classList.contains('minimized')) {
                 floatingWindow.classList.remove('minimized');
             }
             // 如果点击的是面板内容区域且不是上述元素，则最小化
-            else if (!e.target.closest('.panel-content') || 
-                     (e.target.closest('.panel-content') && 
-                      !['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) &&
-                      !e.target.closest('.smart-result') &&
-                      !e.target.closest('.smart-actions'))) {
+            else if (!e.target.closest('.panel-content') ||
+                (e.target.closest('.panel-content') &&
+                    !['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) &&
+                    !e.target.closest('.smart-result') &&
+                    !e.target.closest('.smart-actions'))) {
                 floatingWindow.classList.add('minimized');
             }
         });
@@ -1835,7 +1905,7 @@
         }
 
         document.body.appendChild(floatingWindow);
-        
+
         // 获取已保存的总数
         updateGlobalCount();
     }
@@ -1846,16 +1916,16 @@
             isImporting: CONFIG.isImporting,
             localStorageImporting: localStorage.getItem('javdb_importing')
         });
-        
+
         const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
         const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
         const totalCount = watchedCodes.length + wantedCodes.length;
-        
+
         // 从localStorage读取当前状态，确保页面刷新后状态正确
         const isImporting = localStorage.getItem('javdb_importing') === 'true';
         const importType = localStorage.getItem('javdb_import_type');
         const importedCount = localStorage.getItem('javdb_imported_count') || '0';
-        
+
         debugLog('UI更新参数:', {
             isImporting,
             importType,
@@ -1864,13 +1934,13 @@
             watchedCount: watchedCodes.length,
             wantedCount: wantedCodes.length
         });
-        
+
         const countDiv = document.getElementById('global-count-div');
         const watchedImportBtn = document.getElementById('watched-import-btn');
         const wantedImportBtn = document.getElementById('wanted-import-btn');
         const stopBtn = document.getElementById('global-stop-btn');
         const panel = document.getElementById('javdb-global-floating-window');
-        
+
         debugLog('找到的元素:', {
             countDiv: !!countDiv,
             watchedImportBtn: !!watchedImportBtn,
@@ -1878,18 +1948,18 @@
             stopBtn: !!stopBtn,
             panel: !!panel
         });
-        
+
         if (countDiv) {
             if (isImporting && importType) {
                 const typeText = importType === 'watched' ? '看过' : '想看';
                 debugLog('设置导入中状态');
-                
+
                 // 添加导入中样式
                 countDiv.classList.add('importing');
-                
+
                 // 获取当前页面的影片总数
                 const currentPageItems = document.querySelectorAll('.movie-list .item').length;
-                
+
                 countDiv.innerHTML = `
                     <div style="font-size: 12px; color: #f39c12; text-align: center;">正在导入${typeText}</div>
                     <div style="display: flex; justify-content: space-around; margin-top: 8px; text-align: center;">
@@ -1903,30 +1973,30 @@
                         </div>
                     </div>
                 `;
-                
+
                 if (watchedImportBtn) {
                     watchedImportBtn.disabled = true;
                 }
                 if (wantedImportBtn) {
                     wantedImportBtn.disabled = true;
                 }
-                
+
                 // 停止按钮激活状态
                 if (stopBtn) {
                     stopBtn.disabled = false;
                     stopBtn.classList.add('active');
                 }
-                
+
                 // 导入时自动展开面板
                 if (panel && panel.classList.contains('minimized')) {
                     panel.classList.remove('minimized');
                 }
             } else {
                 debugLog('设置完成状态');
-                
+
                 // 移除导入中样式
                 countDiv.classList.remove('importing');
-                
+
                 countDiv.innerHTML = `
                     <div style="font-size: 11px; opacity: 0.8;">已保存总数</div>
                     <div style="font-size: 18px; font-weight: bold; color: #3498db;">${totalCount}</div>
@@ -1934,21 +2004,21 @@
                         看过: ${watchedCodes.length} | 想看: ${wantedCodes.length}
                     </div>
                 `;
-                
+
                 if (watchedImportBtn) {
                     watchedImportBtn.disabled = false;
                 }
                 if (wantedImportBtn) {
                     wantedImportBtn.disabled = false;
                 }
-                
+
                 // 停止按钮恢复正常状态
                 if (stopBtn) {
                     stopBtn.disabled = false;
                     stopBtn.classList.remove('active');
                 }
             }
-            
+
             debugLog('UI更新完成，当前内容:', countDiv.innerText);
         } else {
             debugLog('未找到悬浮窗元素，尝试重新创建');
@@ -1978,12 +2048,12 @@
             window.location.href = 'https://javdb.com/users/want_watch_videos?page=1';
             return;
         }
-        
+
         // 设置localStorage状态
         localStorage.setItem('javdb_importing', 'true');
         localStorage.setItem('javdb_imported_count', '0');
         localStorage.setItem('javdb_import_type', type);
-        
+
         // 更新内存状态
         CONFIG.isImporting = true;
         CONFIG.importedCount = 0;
@@ -2000,16 +2070,16 @@
     // 停止导入
     function stopImport() {
         debugLog('停止导入被调用');
-        
+
         // 保存当前页面的番号
         saveCurrentPageCodes();
-        
+
         // 立即清除localStorage状态
         localStorage.removeItem('javdb_pending_import');
         localStorage.removeItem('javdb_importing');
         localStorage.removeItem('javdb_imported_count');
         localStorage.removeItem('javdb_import_type');
-        
+
         // 更新内存状态
         CONFIG.isImporting = false;
 
@@ -2017,20 +2087,20 @@
 
         // 保存当前进度
         saveProgress();
-        
+
         // 使用公共函数重建悬浮窗
         forceRecreateFloatingWindow();
-        
+
         // 显示停止提示
         showStopMessage();
-        
+
         debugLog('停止导入完成');
     }
 
     // 保存当前页面的番号
     function saveCurrentPageCodes() {
         debugLog('保存当前页面的番号');
-        
+
         const items = document.querySelectorAll('.movie-list .item');
         const pageCodes = [];
 
@@ -2044,22 +2114,22 @@
 
         if (pageCodes.length > 0) {
             debugLog(`当前页面找到 ${pageCodes.length} 个番号:`, pageCodes);
-            
+
             // 保存番号
             saveCodes(pageCodes);
-            
+
             // 同步到localStorage
             if (CONFIG.isImporting) {
                 localStorage.setItem('javdb_imported_count', CONFIG.importedCount.toString());
             }
-            
+
             debugLog(`已保存当前页面番号，本次导入总数: ${CONFIG.importedCount}`);
         } else {
             debugLog('当前页面没有找到番号');
         }
     }
 
-    
+
 
     // 强制重建悬浮窗的公共函数
     function forceRecreateFloatingWindow() {
@@ -2076,24 +2146,24 @@
     // 完成导入的统一函数
     function completeImport() {
         debugLog('开始完成导入流程');
-        
+
         // 清除所有localStorage状态
         localStorage.removeItem('javdb_pending_import');
         localStorage.removeItem('javdb_importing');
         localStorage.removeItem('javdb_imported_count');
         localStorage.removeItem('javdb_import_type');
-        
+
         // 更新内存状态
         CONFIG.isImporting = false;
-        
+
         debugLog('导入完成，已清除所有状态');
-        
+
         // 保存当前进度
         saveProgress();
-        
+
         // 使用公共函数重建悬浮窗
         forceRecreateFloatingWindow();
-        
+
         // 延迟显示完成消息，确保UI已更新
         setTimeout(() => {
             showCompletionMessage();
@@ -2107,7 +2177,7 @@
         if (existingMsg) {
             existingMsg.remove();
         }
-        
+
         const stopDiv = document.createElement('div');
         stopDiv.id = 'javdb-stop-message';
         stopDiv.style.cssText = `
@@ -2127,9 +2197,9 @@
             backdrop-filter: blur(10px);
         `;
         stopDiv.textContent = '导入已停止';
-        
+
         document.body.appendChild(stopDiv);
-        
+
         // 2秒后自动移除
         setTimeout(() => {
             if (stopDiv.parentNode) {
@@ -2169,7 +2239,7 @@
         if (pageCodes.length > 0) {
             localStorage.setItem('javdb_imported_count', CONFIG.importedCount.toString());
         }
-        
+
         updateGlobalCount();
 
         // 检查是否有下一页
@@ -2232,7 +2302,7 @@
         // 不再依赖控制面板，这个函数现在主要用于保存数据
     }
 
-    
+
 
     // 跳转到下一页
     function goToNextPage() {
@@ -2243,17 +2313,17 @@
         }
 
         debugLog('检查是否有下一页...');
-        
+
         // 检查是否还有更多内容的方法
         const hasMoreContent = checkHasMoreContent();
-        
+
         debugLog('是否有更多内容:', hasMoreContent);
-        
+
         if (hasMoreContent) {
             // 获取当前页码并构造下一页URL
             const currentUrl = window.location.href;
             let nextPageUrl;
-            
+
             // 尝试从URL中提取页码
             const pageMatch = currentUrl.match(/[?&]page=(\d+)/);
             if (pageMatch) {
@@ -2266,32 +2336,32 @@
                 nextPageUrl = currentUrl + (currentUrl.includes('?') ? '&' : '?') + 'page=1';
                 debugLog('URL中没有页码参数，跳转到第1页');
             }
-            
+
             debugLog('准备跳转到下一页:', nextPageUrl);
-            
+
             // 最后一次状态检查
             if (localStorage.getItem('javdb_importing') !== 'true') {
                 debugLog('翻页前检查到停止信号，取消翻页');
                 return;
             }
-            
+
             // 保存当前导入状态到localStorage
             localStorage.setItem('javdb_importing', 'true');
             localStorage.setItem('javdb_imported_count', CONFIG.importedCount.toString());
             localStorage.setItem('javdb_import_type', CONFIG.currentPageType);
-            
+
             debugLog('已保存导入状态，准备跳转到下一页');
-            
+
             // 直接跳转到下一页URL
             window.location.href = nextPageUrl;
-            
+
             debugLog('已跳转到下一页');
-            
+
             // 页面跳转后，init函数会检查并继续导入
         } else {
             // 没有下一页了，完成导入
             debugLog('没有更多内容，导入完成');
-            
+
             // 彻底清除状态
             completeImport();
         }
@@ -2305,21 +2375,21 @@
             debugLog('当前页面没有找到影片项，应该停止');
             return false;
         }
-        
+
         // 检查页面文本内容是否包含"暫無內容"
         const bodyText = document.body.textContent || document.body.innerText || '';
         if (/暫無內容/.test(bodyText)) {
             debugLog('页面显示"暫無內容"，应该停止');
             return false;
         }
-        
+
         return true; // 有番号且没有"暫無內容"则继续
     }
 
     // 显示完成消息
     function showCompletionMessage() {
         const typeName = CONFIG.currentPageType === 'watched' ? '看过' : '想看';
-        
+
         // 创建一个临时的完成提示
         const completionDiv = document.createElement('div');
         completionDiv.style.cssText = `
@@ -2342,9 +2412,9 @@
             <div style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">导入完成！</div>
             <div>${typeName}影片共导入 ${CONFIG.importedCount} 个</div>
         `;
-        
+
         document.body.appendChild(completionDiv);
-        
+
         // 3秒后自动移除
         setTimeout(() => {
             if (completionDiv.parentNode) {
@@ -2416,7 +2486,7 @@
         const watchedMatch = findMatchingCode(code, watchedCodes);
         const wantedMatch = findMatchingCode(code, wantedCodes);
         let matchedCode = null;
-        
+
         if (watchedMatch) {
             found = true;
             location = '看过';
@@ -2429,7 +2499,7 @@
 
         // 查找候选匹配（不区分大小写和空格，支持前缀匹配）
         if (!found && code.length >= 1) {
-            candidates = allCodes.filter(c => 
+            candidates = allCodes.filter(c =>
                 isCodeMatch(c, code) || isCodePrefixMatch(code, c)
             ).slice(0, 5); // 最多显示5个候选
         }
@@ -2449,7 +2519,7 @@
             smartActions.style.display = 'flex';
             smartActions.style.justifyContent = 'center';
             smartActions.innerHTML = '';
-            
+
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'smart-action-button delete active javdb-delete-btn';
             deleteBtn.textContent = '删除';
@@ -2487,13 +2557,13 @@
             // 显示添加按钮
             smartActions.style.display = 'flex';
             smartActions.innerHTML = '';
-            
+
             const addWatchedBtn = document.createElement('button');
             addWatchedBtn.className = 'smart-action-button add-watched';
             addWatchedBtn.textContent = '添加到看过';
             addWatchedBtn.addEventListener('click', () => smartAddCode(code, 'watched'));
             smartActions.appendChild(addWatchedBtn);
-            
+
             const addWantedBtn = document.createElement('button');
             addWantedBtn.className = 'smart-action-button add-wanted';
             addWantedBtn.textContent = '添加到想看';
@@ -2555,10 +2625,10 @@
     function smartDeleteCode(code) {
         const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
         const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
-        
+
         let deleted = false;
         let deletedFrom = '';
-        
+
         // 检查并从看过列表删除
         const watchedMatch = findMatchingCode(code, watchedCodes);
         if (watchedMatch) {
@@ -2567,7 +2637,7 @@
             deleted = true;
             deletedFrom = '看过';
         }
-        
+
         // 检查并从想看列表删除
         const wantedMatch = findMatchingCode(code, wantedCodes);
         if (wantedMatch) {
@@ -2576,12 +2646,12 @@
             deleted = true;
             deletedFrom += deletedFrom ? '和想看' : '想看';
         }
-        
+
         if (deleted) {
             showMessage(`番号 ${code} 已从${deletedFrom}列表删除`, 'success');
             updateGlobalCount();
             handleSmartInput(); // 重新搜索以更新状态
-            
+
             // 重新应用屏蔽效果
             setTimeout(() => {
                 applyBlockEffect();
@@ -2601,7 +2671,7 @@
 
         const messageDiv = document.createElement('div');
         messageDiv.id = 'javdb-message';
-        
+
         let bgColor = '#3498db'; // 默认蓝色
         if (type === 'success') bgColor = '#27ae60';
         else if (type === 'error') bgColor = '#e74c3c';
@@ -2641,11 +2711,11 @@
     function exportData() {
         const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
         const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
-        
+
         // 按字母数字顺序排序
         const sortedWatched = [...watchedCodes].sort();
         const sortedWanted = [...wantedCodes].sort();
-        
+
         const exportData = {
             version: '1.0',
             exportDate: new Date().toISOString().split('T')[0],
@@ -2659,13 +2729,13 @@
                 totalCount: sortedWatched.length + sortedWanted.length
             }
         };
-        
+
         const jsonString = JSON.stringify(exportData, null, 2);
         const blob = new Blob([jsonString], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
-        
+
         const fileName = `javdb_backup_${new Date().toISOString().split('T')[0]}.json`;
-        
+
         const a = document.createElement('a');
         a.href = url;
         a.download = fileName;
@@ -2673,7 +2743,7 @@
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        
+
         showMessage(`已导出 ${exportData.stats.totalCount} 个番号到 ${fileName}`, 'success');
         debugLog(`数据导出成功: ${fileName}`, exportData.stats);
     }
@@ -2692,37 +2762,37 @@
             showMessage('未选择文件', 'error');
             return;
         }
-        
+
         if (!file.name.endsWith('.json')) {
             showMessage('请选择 JSON 格式的文件', 'error');
             return;
         }
-        
+
         const reader = new FileReader();
-        
+
         reader.onload = (e) => {
             try {
                 const importedData = JSON.parse(e.target.result);
-                
+
                 // 验证数据格式
                 if (!validateImportData(importedData)) {
                     showMessage('文件格式不正确，请选择有效的备份文件', 'error');
                     return;
                 }
-                
+
                 // 显示导入选项对话框
                 showImportDialog(importedData);
-                
+
             } catch (error) {
                 showMessage('文件解析失败，请确保是有效的 JSON 文件', 'error');
                 debugLog('导入解析错误:', error);
             }
         };
-        
+
         reader.onerror = () => {
             showMessage('文件读取失败', 'error');
         };
-        
+
         reader.readAsText(file);
     }
 
@@ -2741,7 +2811,7 @@
         if (existingDialog) {
             existingDialog.remove();
         }
-        
+
         const dialog = document.createElement('div');
         dialog.id = 'javdb-import-dialog';
         dialog.style.cssText = `
@@ -2760,11 +2830,11 @@
             max-width: 90vw;
             border: 1px solid rgba(255,255,255,0.15);
         `;
-        
+
         // 获取当前数据统计
         const currentWatched = GM_getValue(CONFIG.watchedStorageKey, []);
         const currentWanted = GM_getValue(CONFIG.wantedStorageKey, []);
-        
+
         // 标题
         const title = document.createElement('div');
         title.style.cssText = `
@@ -2775,7 +2845,7 @@
             color: #3498db;
         `;
         title.textContent = '📥 导入数据预览';
-        
+
         // 数据预览
         const preview = document.createElement('div');
         preview.style.cssText = `
@@ -2785,11 +2855,11 @@
             margin-bottom: 15px;
             font-size: 12px;
         `;
-        
+
         const importWatched = importedData.watched || [];
         const importWanted = importedData.wanted || [];
         const importDate = importedData.exportDate || '未知';
-        
+
         preview.innerHTML = `
             <div style="margin-bottom: 8px; color: #888;">备份日期: ${importDate}</div>
             <div style="display: flex; gap: 20px; justify-content: center;">
@@ -2805,13 +2875,13 @@
                             <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1); text-align: center; color: #888;">
                             当前数据: 看过 ${currentWatched.length} | 想看 ${currentWanted.length}
                         </div>        `;
-        
+
         // 导入模式选项
         const modeContainer = document.createElement('div');
         modeContainer.style.cssText = `
             margin-bottom: 15px;
         `;
-        
+
         const modeTitle = document.createElement('div');
         modeTitle.style.cssText = `
             font-size: 12px;
@@ -2819,14 +2889,14 @@
             margin-bottom: 8px;
         `;
         modeTitle.textContent = '导入模式:';
-        
+
         const modeOptions = document.createElement('div');
         modeOptions.style.cssText = `
             display: flex;
             flex-direction: column;
             gap: 8px;
         `;
-        
+
         // 合并模式
         const mergeOption = document.createElement('label');
         mergeOption.style.cssText = `
@@ -2846,7 +2916,7 @@
                 <div style="font-size: 11px; color: #888;">将导入数据与现有数据合并，自动去重</div>
             </div>
         `;
-        
+
         // 覆盖模式
         const overwriteOption = document.createElement('label');
         overwriteOption.style.cssText = `
@@ -2866,12 +2936,12 @@
                 <div style="font-size: 11px; color: #888;">⚠️ 清空现有数据，使用导入数据替换</div>
             </div>
         `;
-        
+
         modeOptions.appendChild(mergeOption);
         modeOptions.appendChild(overwriteOption);
         modeContainer.appendChild(modeTitle);
         modeContainer.appendChild(modeOptions);
-        
+
         // 按钮区域
         const buttons = document.createElement('div');
         buttons.style.cssText = `
@@ -2879,7 +2949,7 @@
             gap: 10px;
             margin-top: 15px;
         `;
-        
+
         const confirmBtn = document.createElement('button');
         confirmBtn.style.cssText = `
             flex: 1;
@@ -2898,7 +2968,7 @@
             executeImport(importedData, mode);
             dialog.remove();
         });
-        
+
         const cancelBtn = document.createElement('button');
         cancelBtn.style.cssText = `
             flex: 1;
@@ -2914,10 +2984,10 @@
         cancelBtn.addEventListener('click', () => {
             dialog.remove();
         });
-        
+
         buttons.appendChild(confirmBtn);
         buttons.appendChild(cancelBtn);
-        
+
         // 遮罩层点击关闭
         const overlay = document.createElement('div');
         overlay.style.cssText = `
@@ -2933,12 +3003,12 @@
             overlay.remove();
             dialog.remove();
         });
-        
+
         dialog.appendChild(title);
         dialog.appendChild(preview);
         dialog.appendChild(modeContainer);
         dialog.appendChild(buttons);
-        
+
         document.body.appendChild(overlay);
         document.body.appendChild(dialog);
     }
@@ -2947,80 +3017,80 @@
     function executeImport(importedData, mode) {
         const importWatched = (importedData.watched || []).map(code => normalizeCode(code)).filter(code => code);
         const importWanted = (importedData.wanted || []).map(code => normalizeCode(code)).filter(code => code);
-        
+
         let result = {
             watched: { before: 0, after: 0, added: 0 },
             wanted: { before: 0, after: 0, added: 0 }
         };
-        
+
         if (mode === 'overwrite') {
             // 覆盖模式：直接替换，看过优先
             result.watched.before = GM_getValue(CONFIG.watchedStorageKey, []).length;
             result.wanted.before = GM_getValue(CONFIG.wantedStorageKey, []).length;
-            
+
             // 看过优先：从想看中移除看过中已有的番号
             const watchedSet = new Set(importWatched);
             const finalWatched = [...new Set(importWatched)].sort();
             const finalWanted = importWanted.filter(code => !watchedSet.has(code)).sort();
-            
+
             GM_setValue(CONFIG.watchedStorageKey, finalWatched);
             GM_setValue(CONFIG.wantedStorageKey, finalWanted);
-            
+
             result.watched.after = finalWatched.length;
             result.wanted.after = finalWanted.length;
             result.watched.added = finalWatched.length;
             result.wanted.added = finalWanted.length;
-            
+
         } else {
             // 合并模式：合并、去重并排序
             const currentWatched = GM_getValue(CONFIG.watchedStorageKey, []);
             const currentWanted = GM_getValue(CONFIG.wantedStorageKey, []);
-            
+
             result.watched.before = currentWatched.length;
             result.wanted.before = currentWanted.length;
-            
+
             // 合并看过列表
             const mergedWatched = [...new Set([...currentWatched, ...importWatched])].sort();
-            
+
             // 合并想看列表
             const mergedWanted = [...new Set([...currentWanted, ...importWanted])].sort();
-            
+
             // 看过优先：从想看中移除看过中已有的番号
             const watchedSet = new Set(mergedWatched);
             const finalWanted = mergedWanted.filter(code => !watchedSet.has(code)).sort();
-            
+
             GM_setValue(CONFIG.watchedStorageKey, mergedWatched);
             GM_setValue(CONFIG.wantedStorageKey, finalWanted);
-            
+
             result.watched.after = mergedWatched.length;
             result.wanted.after = finalWanted.length;
             result.watched.added = mergedWatched.length - currentWatched.length;
             result.wanted.added = finalWanted.length - currentWanted.length;
-            
+
             debugLog(`合并完成 - 看过: ${result.watched.before} -> ${result.watched.after}, 想看: ${result.wanted.before} -> ${result.wanted.after}`);
         }
-        
+
         // 更新UI
         updateGlobalCount();
-        
+
         // 重新应用屏蔽效果
         setTimeout(() => {
             applyBlockEffect();
         }, 100);
-        
+
         // 显示结果
         const totalAdded = result.watched.added + result.wanted.added;
         const totalAfter = result.watched.after + result.wanted.after;
-        
+
         showImportResult(result, mode, totalAdded, totalAfter);
-        
+
         debugLog('导入完成:', { mode, result });
     }
 
     // 显示导入结果
     function showImportResult(result, mode, totalAdded, totalAfter) {
         const modeText = mode === 'overwrite' ? '覆盖' : '合并';
-        
+
         // 使用 io-result 区域显示结果
         const ioResult = document.getElementById('io-result');
         if (ioResult) {
@@ -3028,7 +3098,7 @@
             ioResult.style.background = 'rgba(39, 174, 96, 0.2)';
             ioResult.style.border = '1px solid rgba(39, 174, 96, 0.5)';
             ioResult.style.color = '#27ae60';
-            
+
             ioResult.innerHTML = `
                 <div style="font-weight: bold; margin-bottom: 8px; text-align: center;">✅ 导入完成 (${modeText}模式)</div>
                 <div style="display: flex; justify-content: space-around; margin-bottom: 5px;">
@@ -3039,136 +3109,99 @@
                     共导入 ${totalAdded} 个新番号，总计 ${totalAfter} 个
                 </div>
             `;
-            
+
             // 5秒后自动隐藏
             setTimeout(() => {
                 ioResult.style.display = 'none';
             }, 5000);
         }
-        
+
         showMessage(`导入完成！新增 ${totalAdded} 个番号`, 'success');
     }
 
     // 绑定影片详情页的想看/看過按钮
+    function bindVideoDetailButtons(retryCount = 0) {
+        debugLog('绑定影片详情页按钮');
 
-        function bindVideoDetailButtons(retryCount = 0) {
+        // 获取当前影片番号
+        const videoCode = getCurrentVideoCode();
+        if (!videoCode) {
+            debugLog('无法获取当前影片番号');
+            // 重试机制：如果获取失败，延迟重试（最多5次）
+            if (retryCount < 5) {
+                setTimeout(() => bindVideoDetailButtons(retryCount + 1), 500);
+            }
+            return;
+        }
 
-            debugLog('绑定影片详情页按钮');
+        debugLog(`当前影片番号: ${videoCode}`);
 
-    
+        // === 自动检测页面标签并同步 ===
+        const reviewTitles = document.querySelectorAll('.review-title');
+        let autoSynced = false;
+        reviewTitles.forEach(title => {
+            const text = title.textContent.trim();
+            if (text.includes('我看過這部影片')) {
+                debugLog('检测到“我看過”标签，自动同步');
+                addVideoToList(videoCode, 'watched', false);
+                autoSynced = true;
+            } else if (text.includes('我想看這部影片')) {
+                debugLog('检测到“我想看”标签，自动同步');
+                addVideoToList(videoCode, 'wanted', false);
+                autoSynced = true;
+            }
+        });
 
-            // 获取当前影片番号
+        // 绑定"想看"按钮
+        const wantButton = document.querySelector('form.button_to[action*="/reviews/want_to_watch"] button') ||
+            Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('想看'));
 
-            const videoCode = getCurrentVideoCode();
+        if (wantButton && !wantButton.hasAttribute('data-javdb-manager-bound')) {
+            wantButton.setAttribute('data-javdb-manager-bound', 'true');
+            wantButton.addEventListener('click', (e) => {
+                debugLog('点击了想看按钮，添加到想看列表');
+                addVideoToList(videoCode, 'wanted');
+            });
+            debugLog('已绑定想看按钮');
+        }
 
-            if (!videoCode) {
+        // 绑定"看過"按钮
+        const watchedButton = document.querySelector('form.button_to[action*="/reviews/watched"] button') ||
+            Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('看過'));
 
-                debugLog('无法获取当前影片番号');
+        if (watchedButton && !watchedButton.hasAttribute('data-javdb-manager-bound')) {
+            watchedButton.setAttribute('data-javdb-manager-bound', 'true');
+            watchedButton.addEventListener('click', (e) => {
+                debugLog('点击了看過按钮，添加到看过列表');
+                addVideoToList(videoCode, 'watched');
+            });
+            debugLog('已绑定看過按钮');
+        }
 
-                // 重试机制：如果获取失败，延迟重试（最多5次）
+        // 绑定"刪除"按钮
+        const deleteButton = document.querySelector('a.button.is-danger[data-method="delete"]') ||
+            Array.from(document.querySelectorAll('a.button')).find(btn => btn.textContent?.includes('刪除') || btn.textContent?.includes('删除'));
 
-                if (retryCount < 5) {
-
-                    setTimeout(() => bindVideoDetailButtons(retryCount + 1), 500);
-
+        if (deleteButton && !deleteButton.hasAttribute('data-javdb-manager-bound')) {
+            deleteButton.setAttribute('data-javdb-manager-bound', 'true');
+            deleteButton.addEventListener('click', (e) => {
+                debugLog(`点击了详情页删除按钮，番号: ${videoCode}`);
+                const removed = removeVideoFromList(videoCode);
+                if (removed) {
+                    debugLog(`成功从本地数据库移除番号: ${videoCode}`);
                 }
 
-                return;
-
-            }
-
-    
-
-            debugLog(`当前影片番号: ${videoCode}`);
-
-    
-
-            // 绑定"想看"按钮
-
-            const wantButton = document.querySelector('form.button_to[action*="/reviews/want_to_watch"] button') ||
-
-                              Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('想看'));
-
-    
-
-            if (wantButton && !wantButton.hasAttribute('data-javdb-manager-bound')) {
-
-                wantButton.setAttribute('data-javdb-manager-bound', 'true');
-
-                wantButton.addEventListener('click', (e) => {
-
-                    debugLog('点击了想看按钮，添加到想看列表');
-
-                    addVideoToList(videoCode, 'wanted');
-
-                });
-
-                debugLog('已绑定想看按钮');
-
-            }
-
-            
-
-            // 绑定"看過"按钮
-
-            const watchedButton = document.querySelector('form.button_to[action*="/reviews/watched"] button') ||
-
-                                Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('看過'));
-
-    
-
-            if (watchedButton && !watchedButton.hasAttribute('data-javdb-manager-bound')) {
-
-                watchedButton.setAttribute('data-javdb-manager-bound', 'true');
-
-                watchedButton.addEventListener('click', (e) => {
-
-                    debugLog('点击了看過按钮，添加到看过列表');
-
-                    addVideoToList(videoCode, 'watched');
-
-                });
-
-                debugLog('已绑定看過按钮');
-
-            }
-
-            
-
-            // 绑定"刪除"按钮
-
-            const deleteButton = document.querySelector('a.button.is-danger[data-method="delete"]') ||
-
-                               Array.from(document.querySelectorAll('a.button')).find(btn => btn.textContent?.includes('刪除') || btn.textContent?.includes('删除'));
-
-    
-
-            if (deleteButton && !deleteButton.hasAttribute('data-javdb-manager-bound')) {
-
-                deleteButton.setAttribute('data-javdb-manager-bound', 'true');
-
-                deleteButton.addEventListener('click', (e) => {
-
-                    debugLog('点击了删除按钮，准备刷新页面');
-
-                    // 延迟1秒让网站先执行删除操作
-
-                    setTimeout(() => {
-
-                        debugLog('删除操作完成，刷新页面');
-
-                        window.location.reload();
-
-                    }, 1000);
-
-                });
-
-                debugLog('已绑定删除按钮');
-
-            }
-
+                debugLog('准备刷新页面...');
+                // 延迟1秒让网站先执行删除操作
+                setTimeout(() => {
+                    debugLog('删除操作完成，刷新页面');
+                    window.location.reload();
+                }, 1000);
+            });
+            debugLog('已绑定删除按钮');
         }
-    
+    }
+
     // 获取当前影片番号（详情页面）
     // 规则：
     // - 日式番号（去除日期后仍有数字）：只保留番号，不需要标题，全部大写
@@ -3180,15 +3213,15 @@
             const strongElement = titleElement.querySelector('strong');
             if (strongElement) {
                 const strongText = strongElement.textContent.trim();
-                
+
                 // 先去除日期格式，再判断是否为欧美区
                 let cleanedStrong = strongText;
                 cleanedStrong = cleanedStrong.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '');
                 cleanedStrong = cleanedStrong.replace(/\.\d{4}\.\d{2}\.\d{2}/g, '');
-                
+
                 // 判断去除日期后是否为纯字母（欧美区）
                 const isPureLetters = /^[a-zA-Z]+$/.test(cleanedStrong.replace(/\s+/g, ''));
-                
+
                 if (isPureLetters) {
                     // 欧美区：获取完整标题（strong + current-title），去掉日期
                     let fullTitle = titleElement.textContent.trim();
@@ -3207,12 +3240,16 @@
         debugLog('无法从详情页面提取番号');
         return null;
     }
-    
+
     // 添加影片到列表
-    function addVideoToList(videoCode, listType) {
+    // listType: 'watched' 或 'wanted'
+    // isSilent: 是否静默处理（不弹出提示）
+    function addVideoToList(videoCode, listType, isSilent = false) {
         // 标准化番号
         const normalizedCode = normalizeCode(videoCode);
-        debugLog(`添加番号 ${videoCode} -> 标准化: ${normalizedCode} 到 ${listType} 列表`);
+        if (!normalizedCode) return;
+
+        debugLog(`尝试同步番号 ${normalizedCode} 到 ${listType} 列表 (静默: ${isSilent})`);
 
         const storageKey = listType === 'watched' ? CONFIG.watchedStorageKey : CONFIG.wantedStorageKey;
         const oppositeKey = listType === 'watched' ? CONFIG.wantedStorageKey : CONFIG.watchedStorageKey;
@@ -3221,34 +3258,85 @@
         let currentList = GM_getValue(storageKey, []);
         let oppositeList = GM_getValue(oppositeKey, []);
 
-        // 检查是否已存在（不区分大小写和空格）
-        if (findMatchingCode(normalizedCode, currentList)) {
-            showMessage(`番号 ${normalizedCode} 已在${listType === 'watched' ? '看过' : '想看'}列表中`, 'warning');
+        // 检查状态
+        const alreadyInCurrent = findMatchingCode(normalizedCode, currentList);
+        const alreadyInOpposite = findMatchingCode(normalizedCode, oppositeList);
+
+        // 如果已经在当前列表且不在对面列表，无需任何操作
+        if (alreadyInCurrent && !alreadyInOpposite) {
+            debugLog(`番号 ${normalizedCode} 已在目标列表且无冲突，无需操作`);
             return;
         }
 
-        // 从对面列表中移除（如果存在，不区分大小写和空格）
-        if (findMatchingCode(normalizedCode, oppositeList)) {
+        let hasChanged = false;
+
+        // 强制二选一逻辑：如果存在于对面列表，必须移除（以最后一次存入为准）
+        if (alreadyInOpposite) {
             oppositeList = oppositeList.filter(code => !isCodeMatch(code, normalizedCode)).sort();
             GM_setValue(oppositeKey, oppositeList);
-            showMessage(`番号 ${normalizedCode} 已从${listType === 'watched' ? '想看' : '看过'}列表移除，并添加到${listType === 'watched' ? '看过' : '想看'}列表`, 'info');
-        } else {
-            showMessage(`番号 ${normalizedCode} 已添加到${listType === 'watched' ? '看过' : '想看'}列表`, 'success');
+            hasChanged = true;
+            debugLog(`从对侧列表 (${listType === 'watched' ? '想看' : '看过'}) 移除冲突项: ${normalizedCode}`);
         }
 
-        // 添加到新列表并排序
-        currentList.push(normalizedCode);
-        GM_setValue(storageKey, currentList.sort());
+        // 如果不在当前列表，则添加
+        if (!alreadyInCurrent) {
+            currentList.push(normalizedCode);
+            GM_setValue(storageKey, currentList.sort());
+            hasChanged = true;
+            debugLog(`添加到当前列表 (${listType}): ${normalizedCode}`);
+        }
 
-        // 更新UI
-        updateGlobalCount();
+        if (hasChanged) {
+            // 更新UI计数和页面效果
+            updateGlobalCount();
+            setTimeout(() => applyBlockEffect(), 100);
 
-        // 重新应用屏蔽效果
-        setTimeout(() => {
-            applyBlockEffect();
-        }, 100);
+            if (!isSilent) {
+                const msg = alreadyInOpposite
+                    ? `番号 ${normalizedCode} 已从${listType === 'watched' ? '想看' : '看过'}移除并更新到${listType === 'watched' ? '看过' : '想看'}`
+                    : `番号 ${normalizedCode} 已添加到${listType === 'watched' ? '看过' : '想看'}列表`;
+                showMessage(msg, 'success');
+            }
+            debugLog(`成功完成同步: ${normalizedCode}`);
+        }
+    }
 
-        debugLog(`成功添加 ${normalizedCode} 到 ${listType} 列表`);
+    // 从列表中移除影片
+    function removeVideoFromList(videoCode) {
+        // 标准化番号
+        const normalizedCode = normalizeCode(videoCode);
+        if (!normalizedCode) return false;
+
+        debugLog(`尝试从所有列表中移除番号: ${normalizedCode}`);
+
+        const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
+        const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
+
+        let hasChanged = false;
+
+        // 从看过列表中移除
+        const newWatchedCodes = watchedCodes.filter(code => !isCodeMatch(code, normalizedCode));
+        if (newWatchedCodes.length !== watchedCodes.length) {
+            GM_setValue(CONFIG.watchedStorageKey, newWatchedCodes);
+            hasChanged = true;
+            debugLog(`从看过列表中移除: ${normalizedCode}`);
+        }
+
+        // 从想看列表中移除
+        const newWantedCodes = wantedCodes.filter(code => !isCodeMatch(code, normalizedCode));
+        if (newWantedCodes.length !== wantedCodes.length) {
+            GM_setValue(CONFIG.wantedStorageKey, newWantedCodes);
+            hasChanged = true;
+            debugLog(`从想看列表中移除: ${normalizedCode}`);
+        }
+
+        if (hasChanged) {
+            updateGlobalCount();
+            setTimeout(() => applyBlockEffect(), 100);
+            return true;
+        }
+
+        return false;
     }
 
     // 清理函数，在页面卸载时调用
