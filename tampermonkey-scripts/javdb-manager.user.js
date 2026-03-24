@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      2.0.0
-// @description  [核心] 看过/想看影片自动屏蔽，智能评分分级（低分/高分）；[功能] 搜索精确匹配高亮，批量导入，详情页同步(含删除)，大图预览，数据备份；[支持] 欧美区番号
+// @version      2.1.0
+// @description  [核心] 影片自动屏蔽(看过/想看)与智能评分(高分高亮/低分隐身)；[功能] 搜索精确高亮、详情页状态同步、悬浮大图预览、数据导入导出(JSON)、自动爬取个人列表；支持日产/欧美/FC2番号
 // @author       RiTian96
 // @match        https://javdb.com/*
 // @icon         https://javdb.com/favicon.ico
@@ -48,285 +48,90 @@
         }
     }
 
+    // === 通用工具函数 ===
+
+    // 日期格式移除（复用函数，避免5处重复正则）
+    // 支持 .YY.MM.DD 和 .YYYY.MM.DD 两种格式
+    function removeDateFromCode(str) {
+        return str.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '').replace(/\.\d{4}\.\d{2}\.\d{2}/g, '');
+    }
+
+    // 标准化用于匹配的字符串（去除空格，转小写）
+    function normalizeForMatch(str) {
+        return str.replace(/\s+/g, '').toLowerCase();
+    }
+
+    // 配置键名映射（loadConfig/saveConfig 共用）
+    const CONFIG_KEYS = {
+        enableWatchedBlock: 'javdb_enable_watched_block',
+        enableWantedBlock: 'javdb_enable_wanted_block',
+        enableLowScoreBlock: 'javdb_enable_low_score_block',
+        enableImagePreview: 'javdb_enable_image_preview',
+    };
+
+    // 从标题元素中提取番号（列表页和详情页通用逻辑）
+    function extractCodeFromTitleElement(containerEl) {
+        if (!containerEl) return null;
+        const strongElement = containerEl.querySelector('strong');
+        if (!strongElement) return null;
+
+        const strongText = strongElement.textContent.trim();
+        const cleanedStrong = removeDateFromCode(strongText);
+        const isPureLetters = /^[a-zA-Z]+$/.test(cleanedStrong.replace(/\s+/g, ''));
+
+        if (isPureLetters) {
+            const fullTitle = containerEl.textContent.trim();
+            const normalizedCode = normalizeCode(fullTitle);
+            debugLog(`提取欧美区完整番号: ${fullTitle} -> 标准化: ${normalizedCode}`);
+            return normalizedCode;
+        } else {
+            const normalizedCode = normalizeCode(strongText);
+            debugLog(`提取日式番号: ${strongText} -> 标准化: ${normalizedCode}`);
+            return normalizedCode;
+        }
+    }
+
     // 从影片项中提取番号（支持日式和欧美区）
     // 规则：
     // - 日式番号（去除日期后仍有数字）：只保留番号，不需要标题，全部大写
     // - 欧美区番号（去除日期后纯字母）：保留完整番号+标题（不含日期），全部大写
     function getVideoCodeFromItem(item) {
-        // 列表页面：统一使用 .video-title
-        const videoTitle = item.querySelector('.video-title');
-        if (videoTitle) {
-            const strongElement = videoTitle.querySelector('strong');
-            if (strongElement) {
-                const strongText = strongElement.textContent.trim();
-
-                // 先去除日期格式，再判断是否为欧美区
-                let cleanedStrong = strongText;
-                cleanedStrong = cleanedStrong.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '');
-                cleanedStrong = cleanedStrong.replace(/\.\d{4}\.\d{2}\.\d{2}/g, '');
-
-                // 判断去除日期后是否为纯字母（欧美区）
-                const isPureLetters = /^[a-zA-Z]+$/.test(cleanedStrong.replace(/\s+/g, ''));
-
-                if (isPureLetters) {
-                    // 欧美区：使用完整 title（番号+标题），去掉日期
-                    let fullTitle = videoTitle.textContent.trim();
-                    const normalizedCode = normalizeCode(fullTitle);
-                    debugLog(`从 video-title 获取欧美区完整番号: ${fullTitle} -> 标准化: ${normalizedCode}`);
-                    return normalizedCode;
-                } else {
-                    // 日式番号：只需要番号部分，不需要标题
-                    // 番号格式可能为：ABC-123, ABC_123, ABC123 等
-                    const normalizedCode = normalizeCode(strongText);
-                    debugLog(`从 video-title strong 获取日式番号: ${strongText} -> 标准化: ${normalizedCode}`);
-                    return normalizedCode;
-                }
-            }
-        }
-
-        debugLog('无法从影片项中提取番号');
-        return null;
+        const code = extractCodeFromTitleElement(item.querySelector('.video-title'));
+        if (!code) debugLog('无法从影片项中提取番号');
+        return code;
     }
 
     // 不区分大小写和空格的匹配函数
     function isCodeMatch(code1, code2) {
-        // 标准化：去除空格，转换为小写
-        const normalize = (str) => str.replace(/\s+/g, '').toLowerCase();
-        return normalize(code1) === normalize(code2);
+        return normalizeForMatch(code1) === normalizeForMatch(code2);
     }
 
     // 不区分大小写和空格的前缀匹配函数
     function isCodePrefixMatch(prefix, fullCode) {
-        const normalize = (str) => str.replace(/\s+/g, '').toLowerCase();
-        return normalize(fullCode).startsWith(normalize(prefix));
+        return normalizeForMatch(fullCode).startsWith(normalizeForMatch(prefix));
     }
 
     // 番号标准化函数
-    // 规则：
     // - 欧美区（去除日期后纯字母）：全部大写，保留完整标题
     // - 日厂（去除日期后仍有数字）：全部大写，只保留字母、数字、-、_
     function normalizeCode(code) {
         if (!code || typeof code !== 'string') return code;
 
-        // 先去除空格
-        let normalized = code.replace(/\s+/g, '');
-
-        // 去除日期格式（欧美区常见）
-        // 格式1: .YY.MM.DD 如 .26.02.26
-        // 格式2: .YYYY.MM.DD 如 .2026.02.26
-        normalized = normalized.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '');
-        normalized = normalized.replace(/\.\d{4}\.\d{2}\.\d{2}/g, '');
-
-        // 判断是否为纯字母（欧美区）- 去除日期后再判断
+        let normalized = removeDateFromCode(code.replace(/\s+/g, ''));
         const isPureLetters = /^[a-zA-Z]+$/.test(normalized);
 
         if (isPureLetters) {
-            // 纯字母（欧美区）：全部大写，保留完整标题
             return normalized.toUpperCase();
         } else {
-            // 带数字（日厂）：
-            // 1. 全部大写
-            // 2. 只保留字母、数字、-、_
             normalized = normalized.toUpperCase();
             normalized = normalized.replace(/[^A-Z0-9\-_]/g, '');
             return normalized;
         }
     }
 
-    // 前缀去重：删除是其他番号前缀的较短番号
-    function removePrefixDuplicates(codeList) {
-        const toRemove = new Set();
 
-        for (let i = 0; i < codeList.length; i++) {
-            for (let j = 0; j < codeList.length; j++) {
-                if (i !== j && codeList[j].startsWith(codeList[i])) {
-                    // codeList[i] 是 codeList[j] 的前缀，标记删除较短的
-                    toRemove.add(i);
-                    debugLog(`前缀去重："${codeList[i]}" 是 "${codeList[j]}" 的前缀，将删除`);
-                }
-            }
-        }
 
-        return {
-            codes: codeList.filter((_, index) => !toRemove.has(index)),
-            removed: toRemove.size
-        };
-    }
 
-    // 清理番号：用于清理已存储的旧数据
-    // 规则：
-    // 1. 去日期、转大写
-    // 2. 尝试匹配标准番号格式，只保留番号部分
-    // 3. 如果不匹配标准格式，只保留字母、数字、-、_
-    function cleanCodeForNewRule(code) {
-        if (!code || typeof code !== 'string') return null;
-
-        // 先去除空格
-        let cleaned = code.replace(/\s+/g, '');
-
-        // 去除日期格式
-        cleaned = cleaned.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '');
-        cleaned = cleaned.replace(/\.\d{4}\.\d{2}\.\d{2}/g, '');
-
-        // 统一转大写
-        cleaned = cleaned.toUpperCase();
-
-        // 尝试匹配标准日厂番号格式（优先匹配，只保留番号部分）
-
-        // 格式1: 带连接符 XXX-123 或 XXX_123（字母或数字开头）
-        // 如: FCP-089, 111315_189, ABC_123
-        const matchWithSeparator = cleaned.match(/^([A-Z0-9]+[-_][A-Z0-9]+)/);
-        if (matchWithSeparator) {
-            return matchWithSeparator[1];
-        }
-
-        // 格式2: 纯字母+数字（无连接符）XXX123 或 XXX123XXX
-        // 如: FZ65, ABC123
-        // 但要避免把标题里的 VOL65AV 也混进去，只取第一个"字母+数字"组合
-        const matchAlphaNum = cleaned.match(/^([A-Z]+[0-9]+)/);
-        if (matchAlphaNum) {
-            return matchAlphaNum[1];
-        }
-
-        // 格式3: 纯数字开头（一些特殊番号）
-        // 如: 123456
-        const matchPureNum = cleaned.match(/^([0-9]+)/);
-        if (matchPureNum && !cleaned.match(/^[0-9]+[A-Z]/)) {
-            return matchPureNum[1];
-        }
-
-        // 如果都不匹配，保留全部字母、数字、-、_
-        cleaned = cleaned.replace(/[^A-Z0-9\-_]/g, '');
-        return cleaned || null;
-    }
-
-    // 数据清理：手动执行，清理和标准化已存储的番号数据
-    function cleanupData() {
-        debugLog('开始数据清理：清理和标准化已存储的番号');
-
-        const result = {
-            before: { watched: 0, wanted: 0, total: 0 },
-            after: { watched: 0, wanted: 0, total: 0 },
-            removed: { duplicates: 0, invalid: 0, crossList: 0, prefix: 0 },
-            details: { watchedPrefix: [], wantedPrefix: [] },
-            changed: false
-        };
-
-        // 处理看过列表
-        const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
-        result.before.watched = watchedCodes.length;
-
-        // 使用新的清理规则标准化
-        let processedWatched = watchedCodes
-            .map(code => cleanCodeForNewRule(code))
-            .filter(code => code); // 移除无效番号
-
-        result.removed.invalid = watchedCodes.length - processedWatched.length;
-
-        // 去重
-        const beforeDedup = processedWatched.length;
-        processedWatched = [...new Set(processedWatched)];
-        result.removed.duplicates += beforeDedup - processedWatched.length;
-
-        // 前缀去重
-        const prefixResultWatched = removePrefixDuplicates(processedWatched);
-        if (prefixResultWatched.removed > 0) {
-            result.details.watchedPrefix = processedWatched.filter((_, i) => {
-                const afterCodes = prefixResultWatched.codes;
-                const code = processedWatched[i];
-                return !afterCodes.includes(code);
-            });
-        }
-        processedWatched = prefixResultWatched.codes;
-        result.removed.prefix += prefixResultWatched.removed;
-
-        // 排序
-        processedWatched = processedWatched.sort();
-
-        result.after.watched = processedWatched.length;
-
-        // 检查是否有变化
-        const watchedChanged = processedWatched.length !== watchedCodes.length ||
-            JSON.stringify(processedWatched) !== JSON.stringify(watchedCodes);
-        if (watchedChanged) {
-            GM_setValue(CONFIG.watchedStorageKey, processedWatched);
-            result.changed = true;
-            debugLog(`看过列表：${watchedCodes.length} -> ${processedWatched.length}，清理了 ${watchedCodes.length - processedWatched.length} 项`);
-        }
-
-        // 处理想看列表
-        const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
-        result.before.wanted = wantedCodes.length;
-
-        // 使用新的清理规则标准化
-        let processedWanted = wantedCodes
-            .map(code => cleanCodeForNewRule(code))
-            .filter(code => code);
-
-        result.removed.invalid += wantedCodes.length - processedWanted.length;
-
-        // 去重
-        const beforeDedupWanted = processedWanted.length;
-        processedWanted = [...new Set(processedWanted)];
-        result.removed.duplicates += beforeDedupWanted - processedWanted.length;
-
-        // 前缀去重
-        const prefixResultWanted = removePrefixDuplicates(processedWanted);
-        if (prefixResultWanted.removed > 0) {
-            result.details.wantedPrefix = processedWanted.filter((_, i) => {
-                const afterCodes = prefixResultWanted.codes;
-                const code = processedWanted[i];
-                return !afterCodes.includes(code);
-            });
-        }
-        processedWanted = prefixResultWanted.codes;
-        result.removed.prefix += prefixResultWanted.removed;
-
-        // 排序
-        processedWanted = processedWanted.sort();
-
-        result.after.wanted = processedWanted.length;
-
-        // 检查是否有变化
-        const wantedChanged = processedWanted.length !== wantedCodes.length ||
-            JSON.stringify(processedWanted) !== JSON.stringify(wantedCodes);
-        if (wantedChanged) {
-            GM_setValue(CONFIG.wantedStorageKey, processedWanted);
-            result.changed = true;
-            debugLog(`想看列表：${wantedCodes.length} -> ${processedWanted.length}，清理了 ${wantedCodes.length - processedWanted.length} 项`);
-        }
-
-        // 检查两个列表之间的重复（一个番号不能同时在看过和想看中）
-        // 注意：现在大小写敏感，需要精确匹配
-        const duplicates = processedWatched.filter(code => processedWanted.includes(code));
-        if (duplicates.length > 0) {
-            debugLog(`发现跨列表重复项：`, duplicates);
-            // 默认保留在看过列表中，从想看列表移除
-            const newWanted = processedWanted.filter(code => !processedWatched.includes(code)).sort();
-            GM_setValue(CONFIG.wantedStorageKey, newWanted);
-            result.removed.crossList = duplicates.length;
-            result.after.wanted = newWanted.length;
-            result.changed = true;
-            debugLog(`已清理跨列表重复，从想看列表移除 ${duplicates.length} 项`);
-        }
-
-        result.before.total = result.before.watched + result.before.wanted;
-        result.after.total = result.after.watched + result.after.wanted;
-
-        const totalRemoved = result.before.total - result.after.total;
-        if (totalRemoved > 0 || result.changed) {
-            console.log(`[JavDB Manager] 数据清理完成：
-- 无效/标准化：${result.removed.invalid}
-- 重复：${result.removed.duplicates}
-- 前缀去重：${result.removed.prefix}
-- 跨列表重复：${result.removed.crossList}
-- 总计清理：${totalRemoved} 个番号`);
-        } else {
-            debugLog('数据清理完成：没有发现需要清理的数据');
-        }
-
-        return result;
-    }
 
     // 查找匹配的番号（不区分大小写和空格，支持前缀匹配）
     function findMatchingCode(code, codeList) {
@@ -396,24 +201,12 @@
 
     // 加载配置
     function loadConfig() {
-        const savedWatchedBlock = localStorage.getItem('javdb_enable_watched_block');
-        const savedWantedBlock = localStorage.getItem('javdb_enable_wanted_block');
-        const savedLowScoreBlock = localStorage.getItem('javdb_enable_low_score_block');
-        const savedImagePreview = localStorage.getItem('javdb_enable_image_preview');
-
-        if (savedWatchedBlock !== null) {
-            CONFIG.enableWatchedBlock = savedWatchedBlock === 'true';
+        for (const key in CONFIG_KEYS) {
+            const savedValue = localStorage.getItem(CONFIG_KEYS[key]);
+            if (savedValue !== null) {
+                CONFIG[key] = savedValue === 'true';
+            }
         }
-        if (savedWantedBlock !== null) {
-            CONFIG.enableWantedBlock = savedWantedBlock === 'true';
-        }
-        if (savedLowScoreBlock !== null) {
-            CONFIG.enableLowScoreBlock = savedLowScoreBlock === 'true';
-        }
-        if (savedImagePreview !== null) {
-            CONFIG.enableImagePreview = savedImagePreview === 'true';
-        }
-
         debugLog('加载配置:', {
             enableWatchedBlock: CONFIG.enableWatchedBlock,
             enableWantedBlock: CONFIG.enableWantedBlock,
@@ -424,10 +217,9 @@
 
     // 保存配置
     function saveConfig() {
-        localStorage.setItem('javdb_enable_watched_block', CONFIG.enableWatchedBlock.toString());
-        localStorage.setItem('javdb_enable_wanted_block', CONFIG.enableWantedBlock.toString());
-        localStorage.setItem('javdb_enable_low_score_block', CONFIG.enableLowScoreBlock.toString());
-        localStorage.setItem('javdb_enable_image_preview', CONFIG.enableImagePreview.toString());
+        for (const key in CONFIG_KEYS) {
+            localStorage.setItem(CONFIG_KEYS[key], CONFIG[key].toString());
+        }
         debugLog('保存配置:', {
             enableWatchedBlock: CONFIG.enableWatchedBlock,
             enableWantedBlock: CONFIG.enableWantedBlock,
@@ -549,13 +341,20 @@
         const movieItems = document.querySelectorAll('.movie-list .item');
         debugLog(`找到 ${movieItems.length} 个影片项`);
 
+        if (movieItems.length === 0) return;
+
+        // 性能优化：在循环外统一读取一次数据
+        const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
+        const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
+        const query = getSearchQuery();
+
         movieItems.forEach(item => {
             // 清除所有相关类
             item.classList.remove('javdb-blocked', 'javdb-watched', 'javdb-wanted',
                 'javdb-low-score', 'javdb-normal-score', 'javdb-high-score', 'javdb-excellent', 'javdb-search-match');
 
             // 应用屏蔽效果（看过/想看）
-            applyBlockEffectInternal(item);
+            applyBlockEffectInternal(item, watchedCodes, wantedCodes, query);
 
             // 应用评分效果（低分屏蔽+高亮）
             applyScoreHighlight(item);
@@ -563,17 +362,12 @@
     }
 
     // 内部屏蔽效果应用函数
-    function applyBlockEffectInternal(item) {
-        // 获取已保存的番号列表
-        const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
-        const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
-
+    function applyBlockEffectInternal(item, watchedCodes, wantedCodes, query) {
         // 使用通用函数提取番号
         const code = getVideoCodeFromItem(item);
 
         if (code) {
             // 1. 处理精确搜索匹配（金边高亮优先）
-            const query = getSearchQuery();
             if (isSearchMatch(query, code)) {
                 item.classList.add('javdb-search-match');
                 debugLog(`精确搜索匹配: ${code}`);
@@ -717,18 +511,42 @@
         }
     }
 
+    // 全局持有 observer 以便卸载
+    let pageObserver = null;
+
     // 监听页面变化
     function observePageChanges() {
-        // 创建MutationObserver监听DOM变化
-        const observer = new MutationObserver((mutations) => {
-            let shouldReapply = false;
+        let lastUrl = window.location.href;
 
+        // 创建MutationObserver同时监听DOM变化和URL变化
+        pageObserver = new MutationObserver((mutations) => {
+            let shouldReapply = false;
+            let urlChanged = false;
+
+            // 检查URL变化
+            const currentUrl = window.location.href;
+            if (currentUrl !== lastUrl) {
+                lastUrl = currentUrl;
+                urlChanged = true;
+
+                // 更新页面类型和标识
+                CONFIG.currentPageType = window.location.href.includes('watched_videos') ? 'watched' :
+                    window.location.href.includes('want_watch_videos') ? 'wanted' : null;
+
+                if (CONFIG.currentPageType === 'watched') {
+                    document.body.setAttribute('data-page', 'watched');
+                } else if (CONFIG.currentPageType === 'wanted') {
+                    document.body.setAttribute('data-page', 'wanted');
+                } else {
+                    document.body.removeAttribute('data-page');
+                }
+            }
+
+            // 检查DOM变化
             mutations.forEach((mutation) => {
-                // 检查是否有新的影片项添加
                 if (mutation.type === 'childList') {
                     mutation.addedNodes.forEach((node) => {
                         if (node.nodeType === Node.ELEMENT_NODE) {
-                            // 如果是影片列表容器或包含影片项的元素
                             if (node.classList?.contains('movie-list') ||
                                 node.querySelector?.('.movie-list .item')) {
                                 shouldReapply = true;
@@ -739,46 +557,15 @@
             });
 
             // 如果有变化，重新应用屏蔽效果
-            if (shouldReapply) {
+            if (shouldReapply || urlChanged) {
                 setTimeout(() => {
                     applyBlockEffect();
-                }, 500); // 延迟一下确保DOM完全加载
+                }, urlChanged ? 1000 : 500); // URL切换延迟较长，DOM变化延迟较短
             }
         });
 
         // 开始观察整个文档
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-
-        // 监听页面导航（SPA应用）
-        let lastUrl = window.location.href;
-        const urlObserver = new MutationObserver(() => {
-            const currentUrl = window.location.href;
-            if (currentUrl !== lastUrl) {
-                lastUrl = currentUrl;
-
-                // 更新页面类型和标识
-                CONFIG.currentPageType = window.location.href.includes('watched_videos') ? 'watched' :
-                    window.location.href.includes('want_watch_videos') ? 'wanted' : null;
-
-                // 设置页面标识，供CSS使用
-                if (CONFIG.currentPageType === 'watched') {
-                    document.body.setAttribute('data-page', 'watched');
-                } else if (CONFIG.currentPageType === 'wanted') {
-                    document.body.setAttribute('data-page', 'wanted');
-                } else {
-                    document.body.removeAttribute('data-page');
-                }
-
-                setTimeout(() => {
-                    applyBlockEffect();
-                }, 1000); // 页面切换后延迟应用
-            }
-        });
-
-        urlObserver.observe(document.body, {
+        pageObserver.observe(document.body, {
             childList: true,
             subtree: true
         });
@@ -922,31 +709,39 @@
         // 添加样式
         const style = document.createElement('style');
         style.textContent = `
+            /* === 基础面板：Apple 玻璃拟态 === */
             .javdb-manager-panel {
                 position: fixed;
                 top: 20px;
                 right: 20px;
                 z-index: 10001;
-                background: rgba(44, 62, 80, 0.95);
-                color: white;
-                font-family: Arial, sans-serif;
-                backdrop-filter: blur(10px);
-                border: 1px solid rgba(255,255,255,0.15);
-                box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-                transition: all 0.3s ease;
+                background: rgba(28, 28, 30, 0.75);
+                color: #f5f5f7;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                backdrop-filter: blur(20px) saturate(180%);
+                -webkit-backdrop-filter: blur(20px) saturate(180%);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 16px;
+                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+                transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
                 box-sizing: border-box;
             }
 
             .javdb-manager-panel.minimized {
-                width: 50px;
-                height: 50px;
+                width: 54px;
+                height: 54px;
                 padding: 0;
-                min-width: 50px;
-                border-radius: 50%;
+                min-width: 54px;
+                border-radius: 27px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 cursor: pointer;
+            }
+
+            .javdb-manager-panel.minimized:hover {
+                transform: scale(1.05);
+                background: rgba(40, 40, 45, 0.85);
             }
 
             .javdb-manager-panel.minimized .panel-content {
@@ -955,105 +750,262 @@
 
             .javdb-manager-panel.minimized .close-button {
                 position: absolute;
-                top: -5px;
-                right: -5px;
+                top: -2px;
+                right: -2px;
                 width: 20px;
                 height: 20px;
-                background: #e74c3c;
+                background: #ff453a;
                 border-radius: 50%;
                 color: white;
-                font-size: 12px;
+                font-size: 14px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 z-index: 10;
+                box-shadow: 0 2px 6px rgba(255, 69, 58, 0.4);
             }
 
             .javdb-manager-panel.minimized .manager-icon {
                 display: block;
-                font-size: 24px;
-                color: #3498db;
+                font-size: 26px;
+                filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
             }
 
             .javdb-manager-panel:not(.minimized) .manager-icon {
                 display: none;
             }
 
-            .javdb-manager-panel:not(.minimized) {
-                width: 400px;
-                padding: 15px;
-                border-radius: 12px;
-                max-height: 80vh;
-                overflow-y: auto;
+            .javdb-manager-panel, .javdb-manager-panel * {
+                box-sizing: border-box !important;
             }
 
-            .javdb-manager-panel * {
-                box-sizing: border-box;
+            .javdb-manager-panel:not(.minimized) {
+                width: 380px;
+                padding: 20px;
+                max-height: 85vh;
+                overflow-y: auto;
+                display: flex;
+                flex-direction: column;
+                align-items: center; /* 居中内容容器 */
+            }
+
+            .panel-content {
+                width: 100%;
+                display: flex;
+                flex-direction: column;
+                gap: 0;
+            }
+
+            /* 自定义滚动条 */
+            .javdb-manager-panel::-webkit-scrollbar {
+                width: 6px;
+            }
+            .javdb-manager-panel::-webkit-scrollbar-track {
+                background: transparent;
+            }
+            .javdb-manager-panel::-webkit-scrollbar-thumb {
+                background: rgba(255, 255, 255, 0.2);
+                border-radius: 3px;
+            }
+            .javdb-manager-panel::-webkit-scrollbar-thumb:hover {
+                background: rgba(255, 255, 255, 0.3);
             }
 
             .manager-header {
-                color: #3498db;
-                font-size: 16px;
-                font-weight: bold;
-                margin-bottom: 12px;
+                color: #ffffff;
+                font-size: 18px;
+                font-weight: 700;
+                margin-bottom: 16px;
                 text-align: center;
+                letter-spacing: 0.5px;
+                text-shadow: 0 2px 10px rgba(0,0,0,0.2);
             }
 
             .manager-count {
                 text-align: center;
-                margin-bottom: 15px;
-                padding: 10px;
-                background: rgba(52, 152, 219, 0.1);
-                border-radius: 8px;
-                border: 1px solid rgba(52, 152, 219, 0.3);
-            }
-
-            .manager-count.importing {
-                background: rgba(243, 156, 18, 0.1);
-                border-color: rgba(243, 156, 18, 0.3);
-            }
-
-            .manager-buttons {
-                display: flex;
-                gap: 8px;
-                margin-bottom: 10px;
-            }
-
-            .manager-button {
-                flex: 1;
-                padding: 8px 12px;
+                margin-bottom: 20px;
+                padding: 0;
+                background: transparent;
                 border: none;
-                border-radius: 6px;
-                font-size: 12px;
-                font-weight: bold;
-                cursor: pointer;
-                transition: all 0.2s ease;
+                box-shadow: none;
+                color: #ebebf5;
+                width: 100%;
+            }
+            
+            .manager-count strong {
+                color: #ffffff;
+                font-weight: 700;
             }
 
-            .manager-button.watched {
-                background: #e74c3c;
-                color: white;
-            }
-
-            .manager-button.wanted {
-                background: #f39c12;
-                color: white;
-            }
-
-            .manager-button.stop {
-                background: #95a5a6;
-                color: white;
+            /* --- 统计网格布局：撑满全宽 --- */
+            .stat-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 12px;
+                margin-top: 5px;
                 width: 100%;
             }
 
+            .stat-item {
+                background: rgba(255, 255, 255, 0.05);
+                padding: 16px 10px;
+                border-radius: 12px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            }
+            
+            .stat-item:hover {
+                background: rgba(255, 255, 255, 0.1);
+                transform: translateY(-2px);
+                border-color: rgba(255, 255, 255, 0.15);
+                box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+            }
+
+            .stat-value {
+                font-size: 24px;
+                font-weight: 700;
+                line-height: 1.1;
+                margin-bottom: 8px;
+            }
+
+            .stat-label {
+                font-size: 12px;
+                color: rgba(235, 235, 245, 0.5);
+                font-weight: 600;
+                letter-spacing: 0.5px;
+            }
+
+            .stat-item.wanted .stat-value { color: #ff9f0a; }
+            .stat-item.watched .stat-value { color: #ff453a; }
+            .stat-item.total { 
+                background: rgba(255, 255, 255, 0.03);
+                border-color: rgba(255, 255, 255, 0.05);
+            }
+            .stat-item.total .stat-value { color: #ffffff; }
+
+            .stat-item.full-width {
+                grid-column: span 2;
+                padding: 14px 10px;
+                margin-bottom: 4px;
+            }
+            .stat-item.full-width .stat-value { font-size: 20px; margin-bottom: 6px; }
+
+            .manager-count.importing {
+                background: rgba(255, 159, 10, 0.1);
+                border-color: rgba(255, 159, 10, 0.2);
+            }
+
+            .manager-tabs {
+                display: flex;
+                margin-bottom: 20px;
+                background: rgba(0, 0, 0, 0.2);
+                border-radius: 8px;
+                padding: 4px;
+                width: 100%;
+            }
+
+            .manager-tab {
+                flex: 1;
+                padding: 8px 12px;
+                text-align: center;
+                cursor: pointer;
+                border: none;
+                background: transparent;
+                color: rgba(235, 235, 245, 0.6);
+                font-size: 13px;
+                font-weight: 600;
+                border-radius: 6px;
+                transition: all 0.3s ease;
+            }
+
+            .manager-tab.active {
+                background: rgba(255, 255, 255, 0.15);
+                color: #ffffff;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            }
+
+            .manager-tab:hover:not(.active) {
+                color: #ffffff;
+                background: rgba(255, 255, 255, 0.05);
+            }
+
+            .manager-tab-content {
+                display: none;
+                animation: fadeIn 0.3s ease;
+                width: 100%;
+            }
+            
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(4px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+
+            .manager-tab-content.active {
+                display: block;
+            }
+
+            /* --- 表单与按钮设计 --- */
+            .manager-buttons {
+                display: flex;
+                gap: 10px;
+                margin-bottom: 12px;
+                width: 100%;
+            }
+
+            .manager-button {
+                flex: 1; /* 强制按钮在 flex 容器中平分宽度 */
+                padding: 10px 14px;
+                border: none;
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+                text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+            }
+
+            .manager-button.watched {
+                background: linear-gradient(135deg, #ff453a, #ff3b30);
+                color: white;
+                box-shadow: 0 4px 12px rgba(255, 69, 58, 0.3);
+            }
+
+            .manager-button.wanted {
+                background: linear-gradient(135deg, #ff9f0a, #ff9500);
+                color: white;
+                box-shadow: 0 4px 12px rgba(255, 159, 10, 0.3);
+            }
+
+            .manager-button.stop {
+                background: rgba(255, 255, 255, 0.1);
+                color: #ebebf5;
+                width: 100%;
+                border: 1px solid rgba(255, 255, 255, 0.05);
+            }
+
             .manager-button.stop.active {
-                background: #e74c3c;
-                opacity: 1;
+                background: linear-gradient(135deg, #ff453a, #ff3b30);
+                color: white;
+                box-shadow: 0 4px 12px rgba(255, 69, 58, 0.3);
+                border: none;
             }
 
             .manager-button:hover {
-                transform: translateY(-1px);
-                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                transform: translateY(-2px);
+                filter: brightness(1.1);
+            }
+            
+            .manager-button:active {
+                transform: translateY(0);
+                filter: brightness(0.95);
             }
 
             .manager-button:disabled {
@@ -1061,232 +1013,192 @@
                 cursor: not-allowed;
                 transform: none;
                 box-shadow: none;
+                filter: none;
             }
 
             .close-button {
                 position: absolute;
-                top: 5px;
-                right: 5px;
-                background: rgba(231, 76, 60, 0.8);
+                top: 14px;
+                right: 14px;
+                background: rgba(255, 255, 255, 0.1);
                 border: none;
-                color: white;
-                font-size: 14px;
+                color: rgba(255, 255, 255, 0.7);
+                font-size: 18px;
                 cursor: pointer;
                 padding: 0;
-                width: 24px;
-                height: 24px;
-                line-height: 24px;
-                text-align: center;
+                width: 28px;
+                height: 28px;
+                line-height: normal;
+                display: flex;
+                align-items: center;
+                justify-content: center;
                 transition: all 0.2s ease;
                 z-index: 100;
                 border-radius: 50%;
-                font-weight: bold;
             }
 
             .close-button:hover {
-                background: #e74c3c;
-                transform: scale(1.1);
-            }
-
-            .javdb-manager-panel:not(.minimized):hover {
-                transform: scale(1.02);
-                box-shadow: 0 6px 25px rgba(0,0,0,0.5);
-            }
-
-            .manager-tabs {
-                display: flex;
-                margin-bottom: 15px;
-                border-bottom: 1px solid rgba(255,255,255,0.2);
-            }
-
-            .manager-tab {
-                flex: 1;
-                padding: 8px;
-                text-align: center;
-                cursor: pointer;
-                border: none;
-                background: none;
-                color: rgba(255,255,255,0.7);
-                font-size: 12px;
-                transition: all 0.2s ease;
-            }
-
-            .manager-tab.active {
-                color: #3498db;
-                border-bottom: 2px solid #3498db;
-            }
-
-            .manager-tab:hover {
+                background: rgba(255, 69, 58, 0.8);
                 color: white;
+                transform: rotate(90deg);
             }
 
-            .manager-tab-content {
-                display: none;
-            }
-
-            .manager-tab-content.active {
-                display: block;
-            }
-
+            /* --- 智能管理功能区 --- */
             .smart-container {
-                margin-bottom: 15px;
+                margin-bottom: 16px;
             }
 
             .smart-input {
                 width: 100%;
-                padding: 10px;
-                border: 1px solid rgba(255,255,255,0.3);
-                border-radius: 6px;
-                background: rgba(255,255,255,0.1);
-                color: white;
+                padding: 12px 14px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 10px;
+                background: rgba(0, 0, 0, 0.2);
+                color: #ffffff;
                 font-size: 14px;
-                margin-bottom: 10px;
+                margin-bottom: 12px;
+                transition: all 0.3s ease;
+                outline: none;
+                box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+            }
+            
+            .smart-input:focus {
+                border-color: rgba(10, 132, 255, 0.6);
+                background: rgba(0, 0, 0, 0.3);
+                box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2);
             }
 
             .smart-input::placeholder {
-                color: rgba(255,255,255,0.5);
+                color: rgba(235, 235, 245, 0.4);
             }
 
-            .smart-result {
-                padding: 12px;
-                background: rgba(255,255,255,0.1);
-                border-radius: 6px;
-                margin-bottom: 10px;
-                font-size: 13px;
-                text-align: center;
-                border: 1px solid rgba(255,255,255,0.2);
-            }
-
-            .smart-result.found {
-                background: rgba(39, 174, 96, 0.2);
-                border: 1px solid rgba(39, 174, 96, 0.5);
-            }
-
-            .smart-result.not-found {
-                background: rgba(231, 76, 60, 0.2);
-                border: 1px solid rgba(231, 76, 60, 0.5);
-            }
-
-            .smart-actions {
-                display: flex;
-                gap: 6px;
-                margin-top: 10px;
-            }
-
-            .smart-action-button {
-                flex: 1;
-                padding: 8px 6px;
-                border: none;
-                border-radius: 6px;
-                font-size: 11px;
-                font-weight: bold;
-                cursor: pointer;
-                transition: all 0.2s ease;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-
-            .smart-action-button.add-watched {
-                background: #e74c3c;
-                color: white;
-            }
-
-            .smart-action-button.add-wanted {
-                background: #f39c12;
-                color: white;
-            }
-
-            
-
-            /* 删除按钮样式，优化比例 */
-            .javdb-manager-panel .smart-action-button.delete.javdb-delete-btn {
-                background: #e74c3c;
-                color: white;
-                width: 100%;
-                padding: 14px 28px;
+            .javdb-manager-panel .smart-result {
+                padding: 16px;
+                background: rgba(255, 255, 255, 0.05);
+                border-radius: 12px;
+                margin-bottom: 3px;
                 font-size: 14px;
-                font-weight: bold;
-                border-radius: 8px;
-                border: none;
-                cursor: pointer;
-                transition: all 0.2s ease;
+                text-align: center;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                line-height: 1.6;
+                width: 100%;
+            }
+
+            .javdb-manager-panel .smart-result.found {
+                background: rgba(48, 209, 88, 0.1);
+                border-color: rgba(48, 209, 88, 0.25);
+                color: #30d158;
+            }
+
+            .javdb-manager-panel .smart-result.not-found {
+                background: rgba(255, 69, 58, 0.1);
+                border-color: rgba(255, 69, 58, 0.25);
+                color: #ff453a;
+            }
+
+            .javdb-manager-panel .smart-actions {
+                display: flex;
+                gap: 12px;
+                margin-top: 12px;
+                width: 100%;
+            }
+
+            .javdb-manager-panel .smart-action-button {
                 flex: 1;
-                text-overflow: visible;
-                overflow: visible;
-                white-space: nowrap;
+                padding: 10px;
+                min-height: 44px;
+                border: none;
+                border-radius: 10px;
+                font-size: 13px;
+                font-weight: 700;
+                cursor: pointer;
+                transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                box-sizing: border-box;
-                position: relative;
-                z-index: 10;
-                outline: none;
-                min-height: 44px;
-                letter-spacing: 1px;
-                box-shadow: 0 2px 8px rgba(231, 76, 60, 0.2);
+                color: white;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+                white-space: nowrap;
             }
 
-            .javdb-manager-panel .smart-action-button.delete.javdb-delete-btn:hover {
-                background: #c0392b;
+            .javdb-manager-panel .smart-action-button.add-watched {
+                background: linear-gradient(135deg, #ff453a, #ff3b30);
+                box-shadow: 0 4px 12px rgba(255, 69, 58, 0.3);
+            }
+
+            .javdb-manager-panel .smart-action-button.add-wanted {
+                background: linear-gradient(135deg, #ff9f0a, #ff9500);
+                box-shadow: 0 4px 12px rgba(255, 159, 10, 0.3);
+            }
+
+            .javdb-manager-panel .smart-action-button:hover {
                 transform: translateY(-2px);
-                box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+                filter: brightness(1.1);
+                box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+            }
+
+            /* --- 删除按钮：经典的圆角矩形设计 --- */
+            .javdb-manager-panel .smart-action-button.delete.javdb-delete-btn {
+                background: linear-gradient(135deg, #ff453a, #ff3b30);
+                width: auto;
+                flex: initial;
+                padding: 10px 40px;
+                min-height: 44px;
+                font-size: 13px; /* 统一字号 */
+                font-weight: 700;
+                letter-spacing: 1px;
+                border-radius: 10px;
+                box-shadow: 0 4px 12px rgba(255, 69, 58, 0.3);
+                margin: 0 auto;
+                border: none; /* 移除边框，消除 2px 高度差 */
             }
 
             .javdb-manager-panel .smart-action-button.delete.javdb-delete-btn:active {
-                transform: translateY(-1px);
-                box-shadow: 0 2px 6px rgba(231, 76, 60, 0.2);
+                transform: translateY(0);
             }
 
-            /* 确保删除按钮内容不被遮挡 */
+            /* --- 确保删除按钮内容不被遮挡 --- */
             .javdb-manager-panel .smart-action-button.delete.javdb-delete-btn::before,
             .javdb-manager-panel .smart-action-button.delete.javdb-delete-btn::after {
                 display: none !important;
                 content: none !important;
             }
 
-            /* 删除按钮容器样式 */
-            .javdb-manager-panel .smart-actions {
-                padding: 15px 0 5px 0;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-            }
-
-            .smart-action-button.add-watched:hover {
-                background: #c0392b;
-            }
-
-            .smart-action-button.add-wanted:hover {
-                background: #e67e22;
-            }
-
-            /* 开关样式 */
+            /* --- 开关与选项区 --- */
             .switch-container {
                 display: flex;
                 flex-direction: column;
-                gap: 12px;
+                gap: 14px;
             }
 
             .switch-item {
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                padding: 8px 0;
+                padding: 10px 14px;
+                background: rgba(255, 255, 255, 0.03);
+                border-radius: 10px;
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                transition: background 0.2s;
+            }
+            
+            .switch-item:hover {
+                background: rgba(255, 255, 255, 0.06);
             }
 
             .switch-label {
-                color: white;
-                font-size: 13px;
+                color: #ebebf5;
+                font-size: 14px;
                 font-weight: 500;
                 flex: 1;
             }
 
+            /* iOS 风格 Switch */
             .switch {
                 position: relative;
                 display: inline-block;
-                width: 44px;
-                height: 24px;
+                width: 48px;
+                height: 28px;
             }
 
             .switch input {
@@ -1302,37 +1214,114 @@
                 left: 0;
                 right: 0;
                 bottom: 0;
-                background-color: rgba(255, 255, 255, 0.2);
-                transition: .4s;
-                border-radius: 24px;
+                background-color: rgba(255, 255, 255, 0.15);
+                transition: .4s cubic-bezier(0.25, 0.1, 0.25, 1);
+                border-radius: 30px;
+                box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
             }
 
             .slider:before {
                 position: absolute;
                 content: "";
-                height: 18px;
-                width: 18px;
+                height: 22px;
+                width: 22px;
                 left: 3px;
                 bottom: 3px;
                 background-color: white;
-                transition: .4s;
+                transition: .4s cubic-bezier(0.25, 0.1, 0.25, 1);
                 border-radius: 50%;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
             }
 
             input:checked + .slider {
-                background-color: #3498db;
+                background-color: #30d158;
             }
 
             input:checked + .slider:before {
                 transform: translateX(20px);
             }
 
-            .switch:hover .slider {
-                background-color: rgba(255, 255, 255, 0.3);
+            /* --- 导入导出与清理相关的通用组件样式 --- */
+            .manager-section {
+                margin-top: 20px;
+                padding-top: 20px;
+                border-top: 1px solid rgba(255,255,255,0.08);
             }
 
-            input:checked + .slider:hover {
-                background-color: #2980b9;
+            .section-title {
+                font-size: 14px;
+                font-weight: 700;
+                margin-bottom: 14px;
+                color: #0a84ff;
+                text-align: center;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            }
+
+            .action-result {
+                display: none;
+                margin-bottom: 12px;
+                padding: 12px;
+                border-radius: 10px;
+                font-size: 13px;
+                text-align: center;
+                background: rgba(255,255,255,0.05);
+            }
+
+            .button-group {
+                display: flex;
+                gap: 10px;
+                margin-bottom: 12px;
+                width: 100%;
+            }
+
+            .btn-export { 
+                background: linear-gradient(135deg, #30d158, #28cd41); 
+                color: white;
+                box-shadow: 0 4px 12px rgba(48, 209, 88, 0.25);
+                border: none;
+                padding: 10px 14px;
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                flex: 1;
+            }
+            .btn-import { 
+                background: linear-gradient(135deg, #0a84ff, #007aff); 
+                color: white;
+                box-shadow: 0 4px 12px rgba(10, 132, 255, 0.25);
+                border: none;
+                padding: 10px 14px;
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                flex: 1;
+            }
+            .btn-export:hover, .btn-import:hover {
+                transform: translateY(-2px);
+                filter: brightness(1.1);
+            }
+            .btn-cleanup { 
+                background: rgba(255, 69, 58, 0.1); 
+                color: #ff453a; 
+                border: 1px solid rgba(255, 69, 58, 0.3);
+                width: 100%; 
+                font-size: 14px; 
+                font-weight: 600;
+                padding: 12px; 
+                border-radius: 10px;
+                box-shadow: none;
+                cursor: pointer;
+                transition: all 0.3s ease;
+            }
+            .btn-cleanup:hover {
+                background: #ff453a;
+                color: white;
+                box-shadow: 0 6px 16px rgba(255, 69, 58, 0.4);
+                transform: translateY(-2px);
             }
 
             /* --- [组件] 智能巨型透镜 (Magic Lens) - 大图预览 --- */
@@ -1557,8 +1546,8 @@
         wantedBtn.className = 'manager-button wanted';
         wantedBtn.textContent = '导入想看';
 
-        buttonContainer.appendChild(watchedBtn);
         buttonContainer.appendChild(wantedBtn);
+        buttonContainer.appendChild(watchedBtn);
 
         const stopBtn = document.createElement('button');
         stopBtn.id = 'global-stop-btn';
@@ -1570,50 +1559,25 @@
 
         // === 数据导入导出功能 ===
         const ioContainer = document.createElement('div');
-        ioContainer.style.cssText = `
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid rgba(255,255,255,0.2);
-        `;
+        ioContainer.className = 'manager-section';
 
         const ioTitle = document.createElement('div');
-        ioTitle.style.cssText = `
-            font-size: 13px;
-            font-weight: bold;
-            margin-bottom: 10px;
-            color: #3498db;
-            text-align: center;
-        `;
+        ioTitle.className = 'section-title';
         ioTitle.textContent = '💾 数据备份';
 
         // 导入结果提示区域
         const ioResult = document.createElement('div');
         ioResult.id = 'io-result';
-        ioResult.style.cssText = `
-            display: none;
-            margin-bottom: 10px;
-            padding: 10px;
-            border-radius: 6px;
-            font-size: 12px;
-            text-align: left;
-        `;
+        ioResult.className = 'action-result';
+        ioResult.style.textAlign = 'left';
 
         // 按钮容器
         const ioButtons = document.createElement('div');
-        ioButtons.style.cssText = `
-            display: flex;
-            gap: 8px;
-            margin-bottom: 10px;
-        `;
+        ioButtons.className = 'button-group';
 
         // 导出按钮
         const exportBtn = document.createElement('button');
-        exportBtn.className = 'manager-button';
-        exportBtn.style.cssText = `
-            background: linear-gradient(135deg, #27ae60, #2ecc71);
-            color: white;
-            flex: 1;
-        `;
+        exportBtn.className = 'manager-button btn-export';
         exportBtn.textContent = '📤 导出数据';
         exportBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1622,12 +1586,7 @@
 
         // 导入按钮
         const importBtn = document.createElement('button');
-        importBtn.className = 'manager-button';
-        importBtn.style.cssText = `
-            background: linear-gradient(135deg, #3498db, #2980b9);
-            color: white;
-            flex: 1;
-        `;
+        importBtn.className = 'manager-button btn-import';
         importBtn.textContent = '📥 导入数据';
         importBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1711,30 +1670,14 @@
 
         // 添加数据清理按钮
         const cleanupContainer = document.createElement('div');
-        cleanupContainer.style.marginTop = '15px';
-        cleanupContainer.style.paddingTop = '15px';
-        cleanupContainer.style.borderTop = '1px solid rgba(255,255,255,0.2)';
+        cleanupContainer.className = 'manager-section';
 
         const cleanupResult = document.createElement('div');
         cleanupResult.id = 'cleanup-result';
-        cleanupResult.style.cssText = `
-            display: none;
-            margin-bottom: 10px;
-            padding: 10px;
-            border-radius: 6px;
-            font-size: 12px;
-            text-align: center;
-        `;
+        cleanupResult.className = 'action-result';
 
         const cleanupButton = document.createElement('button');
-        cleanupButton.className = 'manager-button';
-        cleanupButton.style.cssText = `
-            background: linear-gradient(135deg, #e74c3c, #c0392b);
-            color: white;
-            width: 100%;
-            font-size: 13px;
-            padding: 10px;
-        `;
+        cleanupButton.className = 'manager-button btn-cleanup';
         cleanupButton.textContent = '🗑️ 清空所有数据';
         cleanupButton.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1961,15 +1904,15 @@
                 const currentPageItems = document.querySelectorAll('.movie-list .item').length;
 
                 countDiv.innerHTML = `
-                    <div style="font-size: 12px; color: #f39c12; text-align: center;">正在导入${typeText}</div>
-                    <div style="display: flex; justify-content: space-around; margin-top: 8px; text-align: center;">
-                        <div>
-                            <div style="font-size: 20px; font-weight: bold; color: #f39c12;">${importedCount}</div>
-                            <div style="font-size: 10px; opacity: 0.7;">已导入</div>
+                    <div style="font-size: 13px; color: #ff9f0a; text-align: center; font-weight: 600; margin-bottom: 8px;">🚀 正在导入${typeText}...</div>
+                    <div class="stat-grid">
+                        <div class="stat-item wanted">
+                            <div class="stat-value">${importedCount}</div>
+                            <div class="stat-label">已导入</div>
                         </div>
-                        <div>
-                            <div style="font-size: 20px; font-weight: bold; color: #3498db;">${currentPageItems}</div>
-                            <div style="font-size: 10px; opacity: 0.7;">本页</div>
+                        <div class="stat-item">
+                            <div class="stat-value">${currentPageItems}</div>
+                            <div class="stat-label">本页总计</div>
                         </div>
                     </div>
                 `;
@@ -1998,10 +1941,19 @@
                 countDiv.classList.remove('importing');
 
                 countDiv.innerHTML = `
-                    <div style="font-size: 11px; opacity: 0.8;">已保存总数</div>
-                    <div style="font-size: 18px; font-weight: bold; color: #3498db;">${totalCount}</div>
-                    <div style="font-size: 10px; opacity: 0.7; margin-top: 2px;">
-                        看过: ${watchedCodes.length} | 想看: ${wantedCodes.length}
+                    <div class="stat-grid">
+                        <div class="stat-item full-width total">
+                            <div class="stat-value">${totalCount}</div>
+                            <div class="stat-label">已保存总数</div>
+                        </div>
+                        <div class="stat-item wanted">
+                            <div class="stat-value">${wantedCodes.length}</div>
+                            <div class="stat-label">想看</div>
+                        </div>
+                        <div class="stat-item watched">
+                            <div class="stat-value">${watchedCodes.length}</div>
+                            <div class="stat-label">看过</div>
+                        </div>
                     </div>
                 `;
 
@@ -2029,10 +1981,7 @@
         }
     }
 
-    // 移除快速导入按钮（不再需要）
-    function addQuickImportButton() {
-        // 功能已整合到全局悬浮窗中，不再需要单独的按钮
-    }
+
 
     // 开始导入
     function startImport(type) {
@@ -2172,45 +2121,16 @@
 
     // 显示停止提示
     function showStopMessage() {
-        // 移除已存在的提示
-        const existingMsg = document.getElementById('javdb-stop-message');
-        if (existingMsg) {
-            existingMsg.remove();
-        }
-
-        const stopDiv = document.createElement('div');
-        stopDiv.id = 'javdb-stop-message';
-        stopDiv.style.cssText = `
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(231, 76, 60, 0.95);
-            color: white;
-            padding: 15px 25px;
-            border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            z-index: 10002;
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-            text-align: center;
-            backdrop-filter: blur(10px);
-        `;
-        stopDiv.textContent = '导入已停止';
-
-        document.body.appendChild(stopDiv);
-
-        // 2秒后自动移除
-        setTimeout(() => {
-            if (stopDiv.parentNode) {
-                stopDiv.parentNode.removeChild(stopDiv);
+        showToast('导入已停止', {
+            type: 'error',
+            duration: 2000,
+            onClose: () => {
+                const panel = document.getElementById('javdb-global-floating-window');
+                if (panel && !panel.classList.contains('minimized')) {
+                    panel.classList.add('minimized');
+                }
             }
-            // 停止后自动最小化面板
-            const panel = document.getElementById('javdb-global-floating-window');
-            if (panel && !panel.classList.contains('minimized')) {
-                panel.classList.add('minimized');
-            }
-        }, 2000);
+        });
     }
 
     // 提取并保存当前页面的番号
@@ -2389,43 +2309,24 @@
     // 显示完成消息
     function showCompletionMessage() {
         const typeName = CONFIG.currentPageType === 'watched' ? '看过' : '想看';
-
-        // 创建一个临时的完成提示
-        const completionDiv = document.createElement('div');
-        completionDiv.style.cssText = `
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(39, 174, 96, 0.95);
-            color: white;
-            padding: 20px 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-            z-index: 10002;
-            font-family: Arial, sans-serif;
-            font-size: 16px;
-            text-align: center;
-            backdrop-filter: blur(10px);
-        `;
-        completionDiv.innerHTML = `
+        const html = `
             <div style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">导入完成！</div>
             <div>${typeName}影片共导入 ${CONFIG.importedCount} 个</div>
         `;
 
-        document.body.appendChild(completionDiv);
-
-        // 3秒后自动移除
-        setTimeout(() => {
-            if (completionDiv.parentNode) {
-                completionDiv.parentNode.removeChild(completionDiv);
+        showToast(html, {
+            type: 'success',
+            duration: 3000,
+            isHtml: true,
+            padding: '20px 30px',
+            fontSize: '16px',
+            onClose: () => {
+                const panel = document.getElementById('javdb-global-floating-window');
+                if (panel && !panel.classList.contains('minimized')) {
+                    panel.classList.add('minimized');
+                }
             }
-            // 完成后自动最小化面板
-            const panel = document.getElementById('javdb-global-floating-window');
-            if (panel && !panel.classList.contains('minimized')) {
-                panel.classList.add('minimized');
-            }
-        }, 3000);
+        });
     }
 
     // 页面加载完成后初始化
@@ -2508,14 +2409,16 @@
 
         if (found) {
             smartResult.className = 'smart-result found';
+            const statusColor = location === '看过' ? '#ff453a' : '#ff9f0a';
             smartResult.innerHTML = `
-                <div style="font-weight: bold; margin-bottom: 5px;">已找到</div>
-                <div>搜索: ${code}</div>
-                <div>匹配: ${matchedCode}</div>
-                <div>位置: ${location}列表</div>
+                <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 6px;">
+                    <span style="background: ${statusColor}; color: white; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: bold;">${location}</span>
+                    <span style="font-weight: bold; font-size: 16px;">匹配成功</span>
+                </div>
+                <div style="opacity: 0.8; font-size: 14px; letter-spacing: 0.5px;">${matchedCode}</div>
             `;
 
-            // 显示删除按钮，居中显示
+            // 显示删除按钮
             smartActions.style.display = 'flex';
             smartActions.style.justifyContent = 'center';
             smartActions.innerHTML = '';
@@ -2558,17 +2461,17 @@
             smartActions.style.display = 'flex';
             smartActions.innerHTML = '';
 
-            const addWatchedBtn = document.createElement('button');
-            addWatchedBtn.className = 'smart-action-button add-watched';
-            addWatchedBtn.textContent = '添加到看过';
-            addWatchedBtn.addEventListener('click', () => smartAddCode(code, 'watched'));
-            smartActions.appendChild(addWatchedBtn);
-
             const addWantedBtn = document.createElement('button');
             addWantedBtn.className = 'smart-action-button add-wanted';
             addWantedBtn.textContent = '添加到想看';
             addWantedBtn.addEventListener('click', () => smartAddCode(code, 'wanted'));
             smartActions.appendChild(addWantedBtn);
+
+            const addWatchedBtn = document.createElement('button');
+            addWatchedBtn.className = 'smart-action-button add-watched';
+            addWatchedBtn.textContent = '添加到看过';
+            addWatchedBtn.addEventListener('click', () => smartAddCode(code, 'watched'));
+            smartActions.appendChild(addWatchedBtn);
         }
     }
 
@@ -2661,22 +2564,30 @@
         }
     }
 
-    // 显示消息提示
-    function showMessage(text, type) {
+    // 通用 Toast 提示函数
+    function showToast(content, options = {}) {
         // 移除已存在的提示
-        const existingMsg = document.getElementById('javdb-message');
+        const existingMsg = document.getElementById('javdb-toast-message');
         if (existingMsg) {
             existingMsg.remove();
         }
 
+        const {
+            type = 'info',
+            duration = 2000,
+            isHtml = false,
+            padding = '15px 25px',
+            fontSize = '14px',
+            onClose = null
+        } = options;
+
+        let bgColor = '#3498db'; // info
+        if (type === 'success') bgColor = 'rgba(39, 174, 96, 0.95)';
+        else if (type === 'error') bgColor = 'rgba(231, 76, 60, 0.95)';
+        else if (type === 'warning') bgColor = 'rgba(243, 156, 18, 0.95)';
+
         const messageDiv = document.createElement('div');
-        messageDiv.id = 'javdb-message';
-
-        let bgColor = '#3498db'; // 默认蓝色
-        if (type === 'success') bgColor = '#27ae60';
-        else if (type === 'error') bgColor = '#e74c3c';
-        else if (type === 'warning') bgColor = '#f39c12';
-
+        messageDiv.id = 'javdb-toast-message';
         messageDiv.style.cssText = `
             position: fixed;
             top: 50%;
@@ -2684,25 +2595,37 @@
             transform: translate(-50%, -50%);
             background: ${bgColor};
             color: white;
-            padding: 15px 25px;
+            padding: ${padding};
             border-radius: 8px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.3);
             z-index: 10002;
             font-family: Arial, sans-serif;
-            font-size: 14px;
+            font-size: ${fontSize};
             text-align: center;
             backdrop-filter: blur(10px);
         `;
-        messageDiv.textContent = text;
+
+        if (isHtml) {
+            messageDiv.innerHTML = content;
+        } else {
+            messageDiv.textContent = content;
+        }
 
         document.body.appendChild(messageDiv);
 
-        // 2秒后自动移除
-        setTimeout(() => {
-            if (messageDiv.parentNode) {
-                messageDiv.parentNode.removeChild(messageDiv);
-            }
-        }, 2000);
+        if (duration > 0) {
+            setTimeout(() => {
+                if (messageDiv.parentNode) {
+                    messageDiv.parentNode.removeChild(messageDiv);
+                }
+                if (onClose) onClose();
+            }, duration);
+        }
+    }
+
+    // 显示消息提示 (保持向后兼容)
+    function showMessage(text, type) {
+        showToast(text, { type });
     }
 
     // === 数据导入导出功能实现 ===
@@ -2819,14 +2742,16 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(44, 62, 80, 0.98);
+            background: rgba(28, 28, 30, 0.85);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
             color: white;
             padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
             z-index: 10003;
-            font-family: Arial, sans-serif;
-            min-width: 320px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            min-width: 340px;
             max-width: 90vw;
             border: 1px solid rgba(255,255,255,0.15);
         `;
@@ -3203,42 +3128,11 @@
     }
 
     // 获取当前影片番号（详情页面）
-    // 规则：
-    // - 日式番号（去除日期后仍有数字）：只保留番号，不需要标题，全部大写
-    // - 欧美区番号（去除日期后纯字母）：保留完整番号+标题（不含日期），全部大写
     function getCurrentVideoCode() {
-        // 详情页面：使用 h2.title 提取番号
         const titleElement = document.querySelector('h2.title') || document.querySelector('h2[class*="title"]');
-        if (titleElement) {
-            const strongElement = titleElement.querySelector('strong');
-            if (strongElement) {
-                const strongText = strongElement.textContent.trim();
-
-                // 先去除日期格式，再判断是否为欧美区
-                let cleanedStrong = strongText;
-                cleanedStrong = cleanedStrong.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '');
-                cleanedStrong = cleanedStrong.replace(/\.\d{4}\.\d{2}\.\d{2}/g, '');
-
-                // 判断去除日期后是否为纯字母（欧美区）
-                const isPureLetters = /^[a-zA-Z]+$/.test(cleanedStrong.replace(/\s+/g, ''));
-
-                if (isPureLetters) {
-                    // 欧美区：获取完整标题（strong + current-title），去掉日期
-                    let fullTitle = titleElement.textContent.trim();
-                    const normalizedCode = normalizeCode(fullTitle);
-                    debugLog(`从 h2.title 获取欧美区完整番号: ${fullTitle} -> 标准化: ${normalizedCode}`);
-                    return normalizedCode;
-                } else {
-                    // 日式番号：只需要番号部分，不需要标题
-                    const normalizedCode = normalizeCode(strongText);
-                    debugLog(`从 h2.title strong 获取日式番号: ${strongText} -> 标准化: ${normalizedCode}`);
-                    return normalizedCode;
-                }
-            }
-        }
-
-        debugLog('无法从详情页面提取番号');
-        return null;
+        const code = extractCodeFromTitleElement(titleElement);
+        if (!code) debugLog('无法从详情页面提取番号');
+        return code;
     }
 
     // 添加影片到列表
@@ -3341,7 +3235,7 @@
 
     // 清理函数，在页面卸载时调用
     window.addEventListener('beforeunload', () => {
-        urlObserver.disconnect();
+        if (pageObserver) pageObserver.disconnect();
     });
 
 })();
