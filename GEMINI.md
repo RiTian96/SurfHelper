@@ -187,6 +187,9 @@ SurfHelper/
 ├── GEMINI.md                   # 项目上下文文档（本文件）
 ├── README.md                   # 项目主要说明文档
 ├── .git/                       # Git版本控制
+├── batch-scripts/              # 批处理脚本目录
+│   ├── fongmi-apk-updater.md   # FongMi APK 更新脚本说明文档
+│   └── fongmi-apk-updater.bat  # FongMi APK 智能加速更新脚本 (v1.0.0)
 └── tampermonkey-scripts/       # 油猴脚本目录
     ├── coc-layout-helper.md    # COC阵型助手文档
     ├── coc-layout-helper.user.js # COC阵型助手脚本 (v1.1.3)
