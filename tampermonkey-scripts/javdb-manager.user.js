@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      2.1.0
+// @version      2.2.0
 // @description  [核心] 影片自动屏蔽(看过/想看)与智能评分(高分高亮/低分隐身)；[功能] 搜索精确高亮、详情页状态同步、悬浮大图预览、数据导入导出(JSON)、自动爬取个人列表；支持日产/欧美/FC2番号
 // @author       RiTian96
 // @match        https://javdb.com/*

@@ -152,6 +152,115 @@ function main() {
 }
 ```
 
+### 性能优化代码模式
+
+**Set 去重与查找优化**
+```javascript
+// 使用 Set 替代数组进行 O(1) 查找
+const codeSet = new Set(codes.map(c => normalizeCode(c)));
+const exists = codeSet.has(normalizedCode); // O(1)
+
+// 使用 Set 合并去重
+const allCodes = [...new Set([...existingCodes, ...newCodes])];
+```
+
+**防抖与节流**
+```javascript
+// 防抖：延迟执行，合并多次触发
+function debounce(fn, delay) {
+    let timer = null;
+    return function (...args) {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), delay);
+    };
+}
+
+// 节流：限制执行频率
+function throttle(fn, interval) {
+    let lastTime = 0;
+    return function (...args) {
+        const now = Date.now();
+        if (now - lastTime >= interval) {
+            lastTime = now;
+            fn.apply(this, args);
+        }
+    };
+}
+
+// 应用：DOM 变化监听使用防抖
+const debouncedApply = debounce(() => applyBlockEffect(), 300);
+observer.observe(document.body, { childList: true, subtree: true });
+```
+
+**数据缓存层**
+```javascript
+const DataCache = {
+    _cache: new Map(),
+    _ttl: 5000, // 5秒有效期
+
+    get(key) {
+        const item = this._cache.get(key);
+        if (!item) return null;
+        if (Date.now() - item.timestamp > this._ttl) {
+            this._cache.delete(key);
+            return null;
+        }
+        return item.value;
+    },
+
+    set(key, value) {
+        this._cache.set(key, { value, timestamp: Date.now() });
+    }
+};
+
+// 带缓存的 GM API 包装器
+function getCachedValue(key, defaultValue = null) {
+    const cached = DataCache.get(key);
+    if (cached !== null) return cached;
+    const value = GM_getValue(key, defaultValue);
+    DataCache.set(key, value);
+    return value;
+}
+```
+
+**错误处理包装器**
+```javascript
+// 同步错误处理
+function safeExecute(fn, context = '', defaultValue = null) {
+    try {
+        return fn();
+    } catch (error) {
+        console.error(`[Script] ${context} 出错:`, error);
+        return defaultValue;
+    }
+}
+
+// 异步错误处理
+async function safeExecuteAsync(fn, context = '', defaultValue = null) {
+    try {
+        return await fn();
+    } catch (error) {
+        console.error(`[Script] ${context} 出错:`, error);
+        return defaultValue;
+    }
+}
+```
+
+**常量枚举**
+```javascript
+// 使用常量替代魔法字符串
+const STORAGE_KEY = {
+    WATCHED: 'javdb_watched_codes',
+    WANTED: 'javdb_wanted_codes',
+    IMPORTING: 'javdb_importing'
+};
+
+const CONFIG_KEY = {
+    ENABLE_WATCHED_BLOCK: 'javdb_enable_watched_block',
+    ENABLE_WANTED_BLOCK: 'javdb_enable_wanted_block'
+};
+```
+
 ## 技术要点
 
 ### iframe 检测
@@ -163,6 +272,10 @@ if (window.top !== window.self) return; // 避免在 iframe 中重复执行
 - 使用 `requestAnimationFrame` 优化 DOM 操作
 - 使用 `will-change` CSS 属性优化动画性能
 - 及时清理事件监听器和定时器
+- **使用 Set 进行 O(1) 去重和查找**，替代数组的 O(n) 操作
+- **防抖 (debounce) / 节流 (throttle)** 控制高频函数执行
+- **数据缓存层** 减少重复的 GM API 调用
+- **常量枚举** 替代魔法字符串，提升代码可维护性
 
 ### 兼容性处理
 - 使用 `document.readyState` 检测页面加载状态
