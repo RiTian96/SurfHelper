@@ -1,5 +1,32 @@
 # CODEBUDDY.md This file provides guidance to WorkBuddy when working with code in this repository.
 
+## 常用命令
+
+```bash
+# 查看当前改动状态
+git status
+
+# 开发阶段：提交单个功能（功能验证后执行）
+git add tampermonkey-scripts/xxx.user.js
+git commit -m "feat: 描述" / "perf: 描述" / "fix: 描述"
+
+# 发布阶段：提交版本号和文档（开发结束后执行）
+git add tampermonkey-scripts/xxx.user.js tampermonkey-scripts/xxx.md README.md CODEBUDDY.md
+git commit -m "chore(release): vX.X.X"
+
+# 推送到 GitHub
+git push
+
+# 查看提交历史
+git log --oneline -10
+
+# 回退到上一步（保留改动）
+git reset --soft HEAD~1
+
+# 回退到上一步（丢弃改动）
+git reset --hard HEAD~1
+```
+
 ## 项目概述
 
 SurfHelper 是一个个人开发的油猴脚本集合，专注于提升网页浏览体验。项目包含多个 Tampermonkey 脚本，每个脚本独立运行，专注于特定网站的功能增强。
@@ -84,6 +111,13 @@ SurfHelper/
    - `README.md`（版本号同步）
 7. **最终确认** — 用户确认所有改动无误
 8. **推送发布** — `git push` 推送到 GitHub
+
+### Git 提交策略
+
+| 阶段 | 时机 | 提交内容 | 消息格式 |
+|------|------|----------|----------|
+| 开发 | 功能验证后 | 单个功能/优化 | `feat: 描述` / `perf: 描述` / `fix: 描述` |
+| 发布 | 开发结束后 | 版本号+所有文档 | `chore(release): vX.X.X` |
 
 ### 关键原则
 - ✅ **开发过程中只提交代码，不更新版本号和文档**
