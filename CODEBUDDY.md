@@ -216,7 +216,7 @@ const exists = codeSet.has(normalizedCode); // O(1)
 const allCodes = [...new Set([...existingCodes, ...newCodes])];
 ```
 
-**防抖与节流**
+**防抖**
 ```javascript
 // 防抖：延迟执行，合并多次触发
 function debounce(fn, delay) {
@@ -224,18 +224,6 @@ function debounce(fn, delay) {
     return function (...args) {
         if (timer) clearTimeout(timer);
         timer = setTimeout(() => fn.apply(this, args), delay);
-    };
-}
-
-// 节流：限制执行频率
-function throttle(fn, interval) {
-    let lastTime = 0;
-    return function (...args) {
-        const now = Date.now();
-        if (now - lastTime >= interval) {
-            lastTime = now;
-            fn.apply(this, args);
-        }
     };
 }
 
@@ -325,7 +313,7 @@ if (window.top !== window.self) return; // 避免在 iframe 中重复执行
 - 使用 `will-change` CSS 属性优化动画性能
 - 及时清理事件监听器和定时器
 - **使用 Set 进行 O(1) 去重和查找**，替代数组的 O(n) 操作
-- **防抖 (debounce) / 节流 (throttle)** 控制高频函数执行
+- **防抖 (debounce)** 控制高频函数执行
 - **数据缓存层** 减少重复的 GM API 调用
 - **常量枚举** 替代魔法字符串，提升代码可维护性
 
