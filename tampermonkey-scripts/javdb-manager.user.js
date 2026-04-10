@@ -92,18 +92,6 @@
         };
     }
 
-    // 节流函数：限制函数在一定时间内只执行一次
-    function throttle(fn, interval) {
-        let lastTime = 0;
-        return function (...args) {
-            const now = Date.now();
-            if (now - lastTime >= interval) {
-                lastTime = now;
-                fn.apply(this, args);
-            }
-        };
-    }
-
     // === 数据缓存层 ===
     const DataCache = {
         _cache: new Map(),
@@ -169,6 +157,14 @@
             GM_setValue(key, value);
             DataCache.invalidate(`gm_${key}`);
         }, `设置 ${key}`);
+    }
+
+    // 带缓存失效的 GM_deleteValue 包装器
+    function deleteCachedValue(key) {
+        safeExecute(() => {
+            GM_deleteValue(key);
+            DataCache.invalidate(`gm_${key}`);
+        }, `删除 ${key}`);
     }
 
     // 添加样式
@@ -1119,9 +1115,9 @@
     // 加载配置
     function loadConfig() {
         for (const key in CONFIG_KEYS) {
-            const savedValue = localStorage.getItem(CONFIG_KEYS[key]);
+            const savedValue = getCachedValue(CONFIG_KEYS[key], null);
             if (savedValue !== null) {
-                CONFIG[key] = savedValue === 'true';
+                CONFIG[key] = savedValue;
             }
         }
         debugLog('加载配置:', {
@@ -1135,7 +1131,7 @@
     // 保存配置
     function saveConfig() {
         for (const key in CONFIG_KEYS) {
-            localStorage.setItem(CONFIG_KEYS[key], CONFIG[key].toString());
+            setCachedValue(CONFIG_KEYS[key], CONFIG[key]);
         }
         debugLog('保存配置:', {
             enableWatchedBlock: CONFIG.enableWatchedBlock,
@@ -1179,20 +1175,20 @@
         observePageChanges();
 
         // 检查是否有待处理的导入任务
-        const pendingImport = localStorage.getItem(STORAGE_KEY.PENDING_IMPORT);
+        const pendingImport = getCachedValue(STORAGE_KEY.PENDING_IMPORT, null);
         if (pendingImport && CONFIG.currentPageType === pendingImport) {
             // 延迟一下确保页面完全加载
             setTimeout(() => {
                 startImport(pendingImport);
-                localStorage.removeItem(STORAGE_KEY.PENDING_IMPORT); // 清除待处理状态
+                setCachedValue(STORAGE_KEY.PENDING_IMPORT, null); // 清除待处理状态
             }, 1000);
         }
 
         // 检查是否是翻页后的继续导入
-        const isImporting = localStorage.getItem(STORAGE_KEY.IMPORTING) === 'true';
+        const isImporting = getCachedValue(STORAGE_KEY.IMPORTING, false);
         if (isImporting && CONFIG.currentPageType) {
-            const importType = localStorage.getItem(STORAGE_KEY.IMPORT_TYPE);
-            const importedCount = localStorage.getItem(STORAGE_KEY.IMPORTED_COUNT);
+            const importType = getCachedValue(STORAGE_KEY.IMPORT_TYPE, null);
+            const importedCount = getCachedValue(STORAGE_KEY.IMPORTED_COUNT, 0);
 
             if (importType === CONFIG.currentPageType) {
                 // 延迟一下确保页面完全加载
@@ -1514,11 +1510,18 @@
     // 大图预览状态
     const LensState = {
         isVisible: false,
-        currentSrc: null
+        currentSrc: null,
+        initialized: false
     };
 
     // 初始化大图预览组件
     function initMagicLens() {
+        // 防止重复初始化
+        if (LensState.initialized) {
+            debugLog('大图预览组件已初始化，跳过');
+            return;
+        }
+
         // 创建透镜容器
         const lens = document.createElement('div');
         lens.id = 'javdb-magic-lens';
@@ -1528,11 +1531,16 @@
         // 绑定事件
         bindMagicLensEvents();
 
+        LensState.initialized = true;
         debugLog('大图预览组件初始化完成');
     }
 
     // 绑定大图预览事件
     function bindMagicLensEvents() {
+        // 防止重复绑定
+        if (document.body.dataset.javdbLensBound) return;
+        document.body.dataset.javdbLensBound = 'true';
+
         // 鼠标悬停显示大图
         document.body.addEventListener('mouseover', function (e) {
             // 检查开关状态
@@ -1633,7 +1641,7 @@
 
         // 判断是否在导入页面或正在导入
         const isImportPage = CONFIG.currentPageType === PAGE_TYPE.WATCHED || CONFIG.currentPageType === PAGE_TYPE.WANTED;
-        const isImporting = CONFIG.isImporting || localStorage.getItem(STORAGE_KEY.IMPORTING) === 'true';
+        const isImporting = CONFIG.isImporting || getCachedValue(STORAGE_KEY.IMPORTING, false);
 
         // 注入 CSS 样式（只执行一次）
         injectStyles();
@@ -2009,17 +2017,17 @@
     function updateGlobalCount() {
         debugLog('更新UI显示，当前状态:', {
             isImporting: CONFIG.isImporting,
-            localStorageImporting: localStorage.getItem(STORAGE_KEY.IMPORTING)
+            gmImporting: getCachedValue(STORAGE_KEY.IMPORTING, false)
         });
 
         const watchedCodes = getCachedValue(CONFIG.watchedStorageKey, []);
         const wantedCodes = getCachedValue(CONFIG.wantedStorageKey, []);
         const totalCount = watchedCodes.length + wantedCodes.length;
 
-        // 从localStorage读取当前状态，确保页面刷新后状态正确
-        const isImporting = localStorage.getItem(STORAGE_KEY.IMPORTING) === 'true';
-        const importType = localStorage.getItem(STORAGE_KEY.IMPORT_TYPE);
-        const importedCount = localStorage.getItem(STORAGE_KEY.IMPORTED_COUNT) || '0';
+        // 从 GM 存储读取当前状态，确保页面刷新后状态正确
+        const isImporting = getCachedValue(STORAGE_KEY.IMPORTING, false);
+        const importType = getCachedValue(STORAGE_KEY.IMPORT_TYPE, null);
+        const importedCount = getCachedValue(STORAGE_KEY.IMPORTED_COUNT, 0);
 
         debugLog('UI更新参数:', {
             isImporting,
@@ -2139,21 +2147,21 @@
     function startImport(type) {
         // 如果当前不在对应页面，先跳转并记录待导入状态
         if (type === 'watched' && !window.location.href.includes('watched_videos')) {
-            localStorage.setItem(STORAGE_KEY.PENDING_IMPORT, PAGE_TYPE.WATCHED);
+            setCachedValue(STORAGE_KEY.PENDING_IMPORT, PAGE_TYPE.WATCHED);
             window.location.href = 'https://javdb.com/users/watched_videos?page=1';
             return;
         }
         // 如果当前不在对应页面，先跳转并记录待导入状态
         if (type === PAGE_TYPE.WANTED && !window.location.href.includes('want_watch_videos')) {
-            localStorage.setItem(STORAGE_KEY.PENDING_IMPORT, PAGE_TYPE.WANTED);
+            setCachedValue(STORAGE_KEY.PENDING_IMPORT, PAGE_TYPE.WANTED);
             window.location.href = 'https://javdb.com/users/want_watch_videos?page=1';
             return;
         }
 
-        // 设置localStorage状态
-        localStorage.setItem(STORAGE_KEY.IMPORTING, 'true');
-        localStorage.setItem(STORAGE_KEY.IMPORTED_COUNT, '0');
-        localStorage.setItem(STORAGE_KEY.IMPORT_TYPE, type);
+        // 设置 GM 存储状态
+        setCachedValue(STORAGE_KEY.IMPORTING, true);
+        setCachedValue(STORAGE_KEY.IMPORTED_COUNT, 0);
+        setCachedValue(STORAGE_KEY.IMPORT_TYPE, type);
 
         // 更新内存状态
         CONFIG.isImporting = true;
@@ -2175,11 +2183,11 @@
         // 保存当前页面的番号
         saveCurrentPageCodes();
 
-        // 立即清除localStorage状态
-        localStorage.removeItem(STORAGE_KEY.PENDING_IMPORT);
-        localStorage.removeItem(STORAGE_KEY.IMPORTING);
-        localStorage.removeItem(STORAGE_KEY.IMPORTED_COUNT);
-        localStorage.removeItem(STORAGE_KEY.IMPORT_TYPE);
+        // 立即清除 GM 存储状态
+        deleteCachedValue(STORAGE_KEY.PENDING_IMPORT);
+        deleteCachedValue(STORAGE_KEY.IMPORTING);
+        deleteCachedValue(STORAGE_KEY.IMPORTED_COUNT);
+        deleteCachedValue(STORAGE_KEY.IMPORT_TYPE);
 
         // 更新内存状态
         CONFIG.isImporting = false;
@@ -2220,9 +2228,9 @@
             // 保存番号
             saveCodes(pageCodes);
 
-            // 同步到localStorage
+            // 同步到 GM 存储
             if (CONFIG.isImporting) {
-                localStorage.setItem(STORAGE_KEY.IMPORTED_COUNT, CONFIG.importedCount.toString());
+                setCachedValue(STORAGE_KEY.IMPORTED_COUNT, CONFIG.importedCount);
             }
 
             debugLog(`已保存当前页面番号，本次导入总数: ${CONFIG.importedCount}`);
@@ -2249,11 +2257,11 @@
     function completeImport() {
         debugLog('开始完成导入流程');
 
-        // 清除所有localStorage状态
-        localStorage.removeItem(STORAGE_KEY.PENDING_IMPORT);
-        localStorage.removeItem(STORAGE_KEY.IMPORTING);
-        localStorage.removeItem(STORAGE_KEY.IMPORTED_COUNT);
-        localStorage.removeItem(STORAGE_KEY.IMPORT_TYPE);
+        // 清除所有 GM 存储状态
+        deleteCachedValue(STORAGE_KEY.PENDING_IMPORT);
+        deleteCachedValue(STORAGE_KEY.IMPORTING);
+        deleteCachedValue(STORAGE_KEY.IMPORTED_COUNT);
+        deleteCachedValue(STORAGE_KEY.IMPORT_TYPE);
 
         // 更新内存状态
         CONFIG.isImporting = false;
@@ -2288,8 +2296,8 @@
 
     // 提取并保存当前页面的番号 - 使用 Set 优化去重
     function extractAndSaveCurrentPage() {
-        // 双重检查：内存状态和localStorage状态
-        if (!CONFIG.isImporting || localStorage.getItem(STORAGE_KEY.IMPORTING) !== 'true') {
+        // 双重检查：内存状态和 GM 存储状态
+        if (!CONFIG.isImporting || !getCachedValue(STORAGE_KEY.IMPORTING, false)) {
             debugLog('导入已停止，取消当前页面处理');
             return;
         }
@@ -2309,17 +2317,17 @@
         // 保存番号
         saveCodes(pageCodes);
 
-            // 更新计数
-            if (pageCodes.length > 0) {
-                localStorage.setItem(STORAGE_KEY.IMPORTED_COUNT, CONFIG.importedCount.toString());
-            }
+        // 更新计数
+        if (pageCodes.length > 0) {
+            setCachedValue(STORAGE_KEY.IMPORTED_COUNT, CONFIG.importedCount);
+        }
 
         updateGlobalCount();
 
         // 检查是否有下一页
         setTimeout(() => {
             // 再次检查状态，防止在等待期间被停止
-            if (CONFIG.isImporting && localStorage.getItem(STORAGE_KEY.IMPORTING) === 'true') {
+            if (CONFIG.isImporting && getCachedValue(STORAGE_KEY.IMPORTING, false)) {
                 goToNextPage();
             } else {
                 debugLog('在等待翻页期间检测到停止信号');
@@ -2383,7 +2391,7 @@
     // 跳转到下一页
     function goToNextPage() {
         // 双重检查状态
-        if (!CONFIG.isImporting || localStorage.getItem(STORAGE_KEY.IMPORTING) !== 'true') {
+        if (!CONFIG.isImporting || !getCachedValue(STORAGE_KEY.IMPORTING, false)) {
             debugLog('导入已停止，取消翻页');
             return;
         }
@@ -2416,15 +2424,15 @@
             debugLog('准备跳转到下一页:', nextPageUrl);
 
             // 最后一次状态检查
-            if (localStorage.getItem(STORAGE_KEY.IMPORTING) !== 'true') {
+            if (!getCachedValue(STORAGE_KEY.IMPORTING, false)) {
                 debugLog('翻页前检查到停止信号，取消翻页');
                 return;
             }
 
-            // 保存当前导入状态到localStorage
-            localStorage.setItem(STORAGE_KEY.IMPORTING, 'true');
-            localStorage.setItem(STORAGE_KEY.IMPORTED_COUNT, CONFIG.importedCount.toString());
-            localStorage.setItem(STORAGE_KEY.IMPORT_TYPE, CONFIG.currentPageType);
+            // 保存当前导入状态到 GM 存储
+            setCachedValue(STORAGE_KEY.IMPORTING, true);
+            setCachedValue(STORAGE_KEY.IMPORTED_COUNT, CONFIG.importedCount);
+            setCachedValue(STORAGE_KEY.IMPORT_TYPE, CONFIG.currentPageType);
 
             debugLog('已保存导入状态，准备跳转到下一页');
 
