@@ -11,6 +11,7 @@
 // @grant        GM_getValue
 // @grant        GM_deleteValue
 // @grant        GM_listValues
+// @grant        GM_addStyle
 // @license      MIT
 // @updateURL    https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/javdb-manager.user.js
 // @downloadURL    https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/javdb-manager.user.js
@@ -23,10 +24,42 @@
      * === JavDB Manager 核心配置 ===
      * 包含存储键名、功能开关及全局状态
      */
+
+    // 常量枚举：页面类型
+    const PAGE_TYPE = {
+        WATCHED: 'watched',
+        WANTED: 'wanted',
+        UNKNOWN: null
+    };
+
+    // 常量枚举：列表类型
+    const LIST_TYPE = {
+        WATCHED: 'watched',
+        WANTED: 'wanted'
+    };
+
+    // 常量枚举：存储键名
+    const STORAGE_KEY = {
+        WATCHED: 'javdb_watched_codes',
+        WANTED: 'javdb_wanted_codes',
+        IMPORTING: 'javdb_importing',
+        IMPORTED_COUNT: 'javdb_imported_count',
+        IMPORT_TYPE: 'javdb_import_type',
+        PENDING_IMPORT: 'javdb_pending_import'
+    };
+
+    // 常量枚举：配置键名
+    const CONFIG_KEY = {
+        ENABLE_WATCHED_BLOCK: 'javdb_enable_watched_block',
+        ENABLE_WANTED_BLOCK: 'javdb_enable_wanted_block',
+        ENABLE_LOW_SCORE_BLOCK: 'javdb_enable_low_score_block',
+        ENABLE_IMAGE_PREVIEW: 'javdb_enable_image_preview'
+    };
+
     const CONFIG = {
-        watchedStorageKey: 'javdb_watched_codes',
-        wantedStorageKey: 'javdb_wanted_codes',
-        currentPageType: null, // 'watched' 或 'wanted'
+        watchedStorageKey: STORAGE_KEY.WATCHED,
+        wantedStorageKey: STORAGE_KEY.WANTED,
+        currentPageType: PAGE_TYPE.UNKNOWN,
         isImporting: false,
         importedCount: 0,
         totalCount: 0,
@@ -48,665 +81,100 @@
         }
     }
 
-    // === 通用工具函数 ===
-
-    // 日期格式移除（复用函数，避免5处重复正则）
-    // 支持 .YY.MM.DD 和 .YYYY.MM.DD 两种格式
-    function removeDateFromCode(str) {
-        return str.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '').replace(/\.\d{4}\.\d{2}\.\d{2}/g, '');
+    // 防抖函数：限制高频调用的函数执行频率
+    function debounce(fn, delay) {
+        let timer = null;
+        return function (...args) {
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(() => {
+                fn.apply(this, args);
+            }, delay);
+        };
     }
 
-    // 标准化用于匹配的字符串（去除空格，转小写）
-    function normalizeForMatch(str) {
-        return str.replace(/\s+/g, '').toLowerCase();
+    // 节流函数：限制函数在一定时间内只执行一次
+    function throttle(fn, interval) {
+        let lastTime = 0;
+        return function (...args) {
+            const now = Date.now();
+            if (now - lastTime >= interval) {
+                lastTime = now;
+                fn.apply(this, args);
+            }
+        };
     }
 
-    // 配置键名映射（loadConfig/saveConfig 共用）
-    const CONFIG_KEYS = {
-        enableWatchedBlock: 'javdb_enable_watched_block',
-        enableWantedBlock: 'javdb_enable_wanted_block',
-        enableLowScoreBlock: 'javdb_enable_low_score_block',
-        enableImagePreview: 'javdb_enable_image_preview',
+    // === 数据缓存层 ===
+    const DataCache = {
+        _cache: new Map(),
+        _ttl: 5000, // 缓存有效期 5 秒
+
+        get(key) {
+            const item = this._cache.get(key);
+            if (!item) return null;
+            if (Date.now() - item.timestamp > this._ttl) {
+                this._cache.delete(key);
+                return null;
+            }
+            return item.value;
+        },
+
+        set(key, value) {
+            this._cache.set(key, { value, timestamp: Date.now() });
+        },
+
+        clear() {
+            this._cache.clear();
+        },
+
+        invalidate(key) {
+            this._cache.delete(key);
+        }
     };
 
-    // 从标题元素中提取番号（列表页和详情页通用逻辑）
-    function extractCodeFromTitleElement(containerEl) {
-        if (!containerEl) return null;
-        const strongElement = containerEl.querySelector('strong');
-        if (!strongElement) return null;
-
-        const strongText = strongElement.textContent.trim();
-        const cleanedStrong = removeDateFromCode(strongText);
-        const isPureLetters = /^[a-zA-Z]+$/.test(cleanedStrong.replace(/\s+/g, ''));
-
-        if (isPureLetters) {
-            const fullTitle = containerEl.textContent.trim();
-            const normalizedCode = normalizeCode(fullTitle);
-            debugLog(`提取欧美区完整番号: ${fullTitle} -> 标准化: ${normalizedCode}`);
-            return normalizedCode;
-        } else {
-            const normalizedCode = normalizeCode(strongText);
-            debugLog(`提取日式番号: ${strongText} -> 标准化: ${normalizedCode}`);
-            return normalizedCode;
+    // === 错误处理包装器 ===
+    function safeExecute(fn, context = '', defaultValue = null) {
+        try {
+            return fn();
+        } catch (error) {
+            console.error(`[JavDB Manager] ${context} 出错:`, error);
+            return defaultValue;
         }
     }
 
-    // 从影片项中提取番号（支持日式和欧美区）
-    // 规则：
-    // - 日式番号（去除日期后仍有数字）：只保留番号，不需要标题，全部大写
-    // - 欧美区番号（去除日期后纯字母）：保留完整番号+标题（不含日期），全部大写
-    function getVideoCodeFromItem(item) {
-        const code = extractCodeFromTitleElement(item.querySelector('.video-title'));
-        if (!code) debugLog('无法从影片项中提取番号');
-        return code;
-    }
-
-    // 不区分大小写和空格的匹配函数
-    function isCodeMatch(code1, code2) {
-        return normalizeForMatch(code1) === normalizeForMatch(code2);
-    }
-
-    // 不区分大小写和空格的前缀匹配函数
-    function isCodePrefixMatch(prefix, fullCode) {
-        return normalizeForMatch(fullCode).startsWith(normalizeForMatch(prefix));
-    }
-
-    // 番号标准化函数
-    // - 欧美区（去除日期后纯字母）：全部大写，保留完整标题
-    // - 日厂（去除日期后仍有数字）：全部大写，只保留字母、数字、-、_
-    function normalizeCode(code) {
-        if (!code || typeof code !== 'string') return code;
-
-        let normalized = removeDateFromCode(code.replace(/\s+/g, ''));
-        const isPureLetters = /^[a-zA-Z]+$/.test(normalized);
-
-        if (isPureLetters) {
-            return normalized.toUpperCase();
-        } else {
-            normalized = normalized.toUpperCase();
-            normalized = normalized.replace(/[^A-Z0-9\-_]/g, '');
-            return normalized;
+    // 异步错误处理包装器
+    async function safeExecuteAsync(fn, context = '', defaultValue = null) {
+        try {
+            return await fn();
+        } catch (error) {
+            console.error(`[JavDB Manager] ${context} 出错:`, error);
+            return defaultValue;
         }
     }
 
+    // 带缓存的 GM_getValue 包装器
+    function getCachedValue(key, defaultValue = null) {
+        const cacheKey = `gm_${key}`;
+        const cached = DataCache.get(cacheKey);
+        if (cached !== null) return cached;
 
-
-
-
-    // 查找匹配的番号（不区分大小写和空格，支持前缀匹配）
-    function findMatchingCode(code, codeList) {
-        return codeList.find(savedCode => isCodeMatch(code, savedCode));
+        const value = safeExecute(() => GM_getValue(key, defaultValue), `获取 ${key}`);
+        DataCache.set(cacheKey, value);
+        return value;
     }
 
-    // 查找前缀匹配的番号（不区分大小写和空格）
-    function findPrefixMatchingCode(prefix, codeList) {
-        return codeList.filter(savedCode => isCodePrefixMatch(prefix, savedCode));
+    // 带缓存失效的 GM_setValue 包装器
+    function setCachedValue(key, value) {
+        safeExecute(() => {
+            GM_setValue(key, value);
+            DataCache.invalidate(`gm_${key}`);
+        }, `设置 ${key}`);
     }
 
-    // 创建开关组件
-    function createSwitch(label, configKey, isChecked) {
-        const switchItem = document.createElement('div');
-        switchItem.className = 'switch-item';
+    // 添加样式
+    function injectStyles() {
+        if (document.querySelector('style[data-javdb-manager]')) return;
 
-        const switchLabel = document.createElement('label');
-        switchLabel.className = 'switch-label';
-        switchLabel.textContent = label;
-
-        const switchWrapper = document.createElement('label');
-        switchWrapper.className = 'switch';
-
-        const switchInput = document.createElement('input');
-        switchInput.type = 'checkbox';
-        switchInput.checked = isChecked;
-        switchInput.addEventListener('change', (e) => {
-            CONFIG[configKey] = e.target.checked;
-            saveConfig();
-            applyBlockEffect(); // 重新应用效果
-            debugLog(`${label}开关: ${e.target.checked ? '开启' : '关闭'}`);
-        });
-
-        const slider = document.createElement('span');
-        slider.className = 'slider';
-
-        switchWrapper.appendChild(switchInput);
-        switchWrapper.appendChild(slider);
-
-        switchItem.appendChild(switchLabel);
-        switchItem.appendChild(switchWrapper);
-
-        return switchItem;
-    }
-
-    // 测试函数：分析页面评分结构
-    function debugScoreStructure() {
-        const movieItems = document.querySelectorAll('.movie-list .item');
-        console.log(`找到 ${movieItems.length} 个影片项`);
-
-        if (movieItems.length > 0) {
-            const firstItem = movieItems[0];
-            console.log('第一个影片项的HTML结构:', firstItem.innerHTML.substring(0, 500));
-
-            const scoreElements = firstItem.querySelectorAll('.score, .score .value, .score > .value');
-            console.log('找到的评分元素:', scoreElements.length);
-
-            scoreElements.forEach((el, index) => {
-                console.log(`评分元素${index}:`, {
-                    className: el.className,
-                    textContent: el.textContent,
-                    innerHTML: el.innerHTML.substring(0, 100)
-                });
-            });
-        }
-    }
-
-    // 加载配置
-    function loadConfig() {
-        for (const key in CONFIG_KEYS) {
-            const savedValue = localStorage.getItem(CONFIG_KEYS[key]);
-            if (savedValue !== null) {
-                CONFIG[key] = savedValue === 'true';
-            }
-        }
-        debugLog('加载配置:', {
-            enableWatchedBlock: CONFIG.enableWatchedBlock,
-            enableWantedBlock: CONFIG.enableWantedBlock,
-            enableLowScoreBlock: CONFIG.enableLowScoreBlock,
-            enableImagePreview: CONFIG.enableImagePreview
-        });
-    }
-
-    // 保存配置
-    function saveConfig() {
-        for (const key in CONFIG_KEYS) {
-            localStorage.setItem(CONFIG_KEYS[key], CONFIG[key].toString());
-        }
-        debugLog('保存配置:', {
-            enableWatchedBlock: CONFIG.enableWatchedBlock,
-            enableWantedBlock: CONFIG.enableWantedBlock,
-            enableLowScoreBlock: CONFIG.enableLowScoreBlock,
-            enableImagePreview: CONFIG.enableImagePreview
-        });
-    }
-
-    // 初始化
-    function init() {
-        if (CONFIG.panelCreated) return;
-
-        // 加载配置
-        loadConfig();
-
-        // 确定当前页面类型
-        CONFIG.currentPageType = window.location.href.includes('watched_videos') ? 'watched' :
-            window.location.href.includes('want_watch_videos') ? 'wanted' : null;
-
-        // 设置页面标识，供CSS使用
-        if (CONFIG.currentPageType === 'watched') {
-            document.body.setAttribute('data-page', 'watched');
-        } else if (CONFIG.currentPageType === 'wanted') {
-            document.body.setAttribute('data-page', 'wanted');
-        } else {
-            document.body.removeAttribute('data-page');
-        }
-
-        // 创建全局悬浮窗
-        createGlobalFloatingWindow();
-        CONFIG.panelCreated = true;
-
-        // 初始化大图预览组件
-        initMagicLens();
-
-        // 应用屏蔽效果
-        applyBlockEffect();
-
-        // 监听页面变化，动态应用屏蔽效果
-        observePageChanges();
-
-        // 检查是否有待处理的导入任务
-        const pendingImport = localStorage.getItem('javdb_pending_import');
-        if (pendingImport && CONFIG.currentPageType === pendingImport) {
-            // 延迟一下确保页面完全加载
-            setTimeout(() => {
-                startImport(pendingImport);
-                localStorage.removeItem('javdb_pending_import'); // 清除待处理状态
-            }, 1000);
-        }
-
-        // 检查是否是翻页后的继续导入
-        const isImporting = localStorage.getItem('javdb_importing') === 'true';
-        if (isImporting && CONFIG.currentPageType) {
-            const importType = localStorage.getItem('javdb_import_type');
-            const importedCount = localStorage.getItem('javdb_imported_count');
-
-            if (importType === CONFIG.currentPageType) {
-                // 延迟一下确保页面完全加载
-                setTimeout(() => {
-                    // 更新内存状态
-                    CONFIG.isImporting = true;
-                    CONFIG.importedCount = importedCount ? parseInt(importedCount) : 0;
-                    CONFIG.currentPageType = importType;
-
-                    // 更新UI
-                    updateGlobalCount();
-
-                    // 继续导入
-                    extractAndSaveCurrentPage();
-                }, 2000); // 翻页需要更长的等待时间
-            }
-        }
-
-        // 添加点击按钮自动导入功能
-        if (window.location.pathname.includes('/v/')) {
-            // 影片详情页，绑定想看/看過按钮
-            bindVideoDetailButtons();
-        }
-    }
-
-    // 获取当前页面搜索词
-    function getSearchQuery() {
-        const searchInput = document.getElementById('video-search');
-        return searchInput ? searchInput.value.trim() : '';
-    }
-
-    // 万能标准化匹配逻辑
-    function isSearchMatch(query, videoCode) {
-        if (!query || !videoCode) return false;
-
-        // 标准化：转大写，只保留字母和数字
-        const sQuery = query.toUpperCase().replace(/[^A-Z0-9]/g, '');
-        const sCode = videoCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
-
-        if (!sQuery || !sCode) return false;
-
-        // 1. 完全相等（标准化后）
-        if (sQuery === sCode) return true;
-
-        // 2. 针对 FC2 的特殊处理
-        // 如果搜纯数字，匹配 FC2 + 数字
-        if (/^\d+$/.test(sQuery)) {
-            if (sCode === 'FC2' + sQuery) return true;
-        }
-
-        // 3. 针对搜 FC2 数字却漏搜字母的特殊处理
-        if (sQuery === 'FC2' + sCode) return true;
-
-        return false;
-    }
-
-    // 屏蔽功能相关函数
-    // 应用屏蔽效果和高亮评分
-    function applyBlockEffect() {
-        debugLog('应用屏蔽效果');
-
-        // 查找所有影片项
-        const movieItems = document.querySelectorAll('.movie-list .item');
-        debugLog(`找到 ${movieItems.length} 个影片项`);
-
-        if (movieItems.length === 0) return;
-
-        // 性能优化：在循环外统一读取一次数据
-        const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
-        const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
-        const query = getSearchQuery();
-
-        movieItems.forEach(item => {
-            // 清除所有相关类
-            item.classList.remove('javdb-blocked', 'javdb-watched', 'javdb-wanted',
-                'javdb-low-score', 'javdb-normal-score', 'javdb-high-score', 'javdb-excellent', 'javdb-search-match');
-
-            // 应用屏蔽效果（看过/想看）
-            applyBlockEffectInternal(item, watchedCodes, wantedCodes, query);
-
-            // 应用评分效果（低分屏蔽+高亮）
-            applyScoreHighlight(item);
-        });
-    }
-
-    // 内部屏蔽效果应用函数
-    function applyBlockEffectInternal(item, watchedCodes, wantedCodes, query) {
-        // 使用通用函数提取番号
-        const code = getVideoCodeFromItem(item);
-
-        if (code) {
-            // 1. 处理精确搜索匹配（金边高亮优先）
-            if (isSearchMatch(query, code)) {
-                item.classList.add('javdb-search-match');
-                debugLog(`精确搜索匹配: ${code}`);
-            }
-
-            let shouldBlock = false;
-
-            // 根据当前页面类型决定屏蔽策略
-            // 在看过页面，只屏蔽看过的，不屏蔽想看的
-            if (CONFIG.currentPageType === 'watched') {
-                if (findMatchingCode(code, watchedCodes) && CONFIG.enableWatchedBlock) {
-                    item.classList.add('javdb-watched');
-                    shouldBlock = true;
-                    debugLog(`看过页面屏蔽看过番号: ${code}`);
-                }
-                // 在看过页面，想看的影片正常显示，但添加标记以便区分
-                else if (findMatchingCode(code, wantedCodes)) {
-                    item.classList.add('javdb-wanted');
-                    // 不设置shouldBlock，所以不会被屏蔽
-                    debugLog(`看过页面显示想看番号: ${code}（不屏蔽）`);
-                }
-            }
-            // 在想看页面，只屏蔽想看的，不屏蔽看过的
-            else if (CONFIG.currentPageType === 'wanted') {
-                if (findMatchingCode(code, wantedCodes) && CONFIG.enableWantedBlock) {
-                    item.classList.add('javdb-wanted');
-                    shouldBlock = true;
-                    debugLog(`想看页面屏蔽想看番号: ${code}`);
-                }
-                // 在想看页面，看过的影片正常显示，但添加标记以便区分
-                else if (findMatchingCode(code, watchedCodes)) {
-                    item.classList.add('javdb-watched');
-                    // 不设置shouldBlock，所以不会被屏蔽
-                    debugLog(`想看页面显示看过番号: ${code}（不屏蔽）`);
-                }
-            }
-            // 在其他页面，按照原来的逻辑屏蔽所有
-            else {
-                // 检查是否在看过列表中
-                if (findMatchingCode(code, watchedCodes) && CONFIG.enableWatchedBlock) {
-                    item.classList.add('javdb-watched');
-                    shouldBlock = true;
-                    debugLog(`其他页面屏蔽看过番号: ${code}`);
-                }
-
-                // 检查是否在想看列表中
-                if (findMatchingCode(code, wantedCodes) && CONFIG.enableWantedBlock) {
-                    item.classList.add('javdb-wanted');
-                    shouldBlock = true;
-                    debugLog(`其他页面屏蔽想看番号: ${code}`);
-                }
-            }
-
-            // 如果需要屏蔽，添加屏蔽样式
-            if (shouldBlock) {
-                item.classList.add('javdb-blocked');
-            }
-        }
-    }
-
-    // 根据评价人数获取评分阈值
-    function getScoreThresholds(reviewCount) {
-        if (reviewCount < 10) {
-            return { lowScore: null, highScore: null }; // 样本太小，不做判断
-        } else if (reviewCount < 50) {
-            return { lowScore: 3.0, highScore: 4.4 };
-        } else if (reviewCount < 100) {
-            return { lowScore: 3.1, highScore: 4.3 };
-        } else if (reviewCount < 300) {
-            return { lowScore: 3.2, highScore: 4.2 };
-        } else if (reviewCount < 1000) {
-            return { lowScore: 3.3, highScore: 4.1 };
-        } else {
-            return { lowScore: 3.4, highScore: 4.0 };
-        }
-    }
-
-    // 应用评分效果
-    function applyScoreHighlight(item) {
-        // 尝试多种可能的评分元素选择器
-        let scoreElement = item.querySelector('.score .value') ||
-            item.querySelector('.score > .value') ||
-            item.querySelector('.score');
-
-        if (!scoreElement) return;
-
-        // 获取评分文本，可能包含HTML编码
-        let scoreText = scoreElement.textContent || scoreElement.innerText || '';
-        scoreText = scoreText.trim();
-
-        // 解码HTML实体
-        scoreText = scoreText.replace(/=E5=88=86/g, '分')
-            .replace(/=E4=BA=BA/g, '人')
-            .replace(/=E7=94=A8/g, '用')
-            .replace(/=E8=A9=95=E5=83=B9/g, '評價')
-            .replace(/=E7=9C=8B/g, '看')
-            .replace(/=E7=94=B1/g, '由');
-
-        // 匹配评分格式：X.XX分, 由XXX人評價
-        const scoreMatch = scoreText.match(/([\d.]+)分[,，]\s*由(\d+)人(?:評價|评价)/);
-
-        // 清除之前的评分相关类
-        item.classList.remove('javdb-low-score', 'javdb-high-score');
-
-        if (!CONFIG.enableLowScoreBlock) return;
-
-        let score, reviewCount;
-
-        if (scoreMatch) {
-            score = parseFloat(scoreMatch[1]);
-            reviewCount = parseInt(scoreMatch[2]);
-        } else {
-            // 宽松匹配：只提取分数
-            const looseMatch = scoreText.match(/([\d.]+)/);
-            if (!looseMatch) {
-                debugLog(`无法解析评分，正常显示`);
-                return;
-            }
-            score = parseFloat(looseMatch[1]);
-            reviewCount = 0; // 无法获取人数时按0处理
-        }
-
-        // 获取阈值
-        const thresholds = getScoreThresholds(reviewCount);
-
-        // 样本太小，不做判断
-        if (thresholds.lowScore === null) {
-            debugLog(`评价人数较少(${reviewCount}人)，正常显示: ${score}分`);
-            return;
-        }
-
-        // 判断评分档位
-        if (score < thresholds.lowScore) {
-            item.classList.add('javdb-low-score');
-            debugLog(`低分: ${score}分, ${reviewCount}人评价, 阈值${thresholds.lowScore}`);
-        } else if (score >= thresholds.highScore) {
-            item.classList.add('javdb-high-score');
-            debugLog(`高分: ${score}分, ${reviewCount}人评价, 阈值${thresholds.highScore}`);
-        } else {
-            debugLog(`正常: ${score}分, ${reviewCount}人评价`);
-        }
-    }
-
-    // 全局持有 observer 以便卸载
-    let pageObserver = null;
-
-    // 监听页面变化
-    function observePageChanges() {
-        let lastUrl = window.location.href;
-
-        // 创建MutationObserver同时监听DOM变化和URL变化
-        pageObserver = new MutationObserver((mutations) => {
-            let shouldReapply = false;
-            let urlChanged = false;
-
-            // 检查URL变化
-            const currentUrl = window.location.href;
-            if (currentUrl !== lastUrl) {
-                lastUrl = currentUrl;
-                urlChanged = true;
-
-                // 更新页面类型和标识
-                CONFIG.currentPageType = window.location.href.includes('watched_videos') ? 'watched' :
-                    window.location.href.includes('want_watch_videos') ? 'wanted' : null;
-
-                if (CONFIG.currentPageType === 'watched') {
-                    document.body.setAttribute('data-page', 'watched');
-                } else if (CONFIG.currentPageType === 'wanted') {
-                    document.body.setAttribute('data-page', 'wanted');
-                } else {
-                    document.body.removeAttribute('data-page');
-                }
-            }
-
-            // 检查DOM变化
-            mutations.forEach((mutation) => {
-                if (mutation.type === 'childList') {
-                    mutation.addedNodes.forEach((node) => {
-                        if (node.nodeType === Node.ELEMENT_NODE) {
-                            if (node.classList?.contains('movie-list') ||
-                                node.querySelector?.('.movie-list .item')) {
-                                shouldReapply = true;
-                            }
-                        }
-                    });
-                }
-            });
-
-            // 如果有变化，重新应用屏蔽效果
-            if (shouldReapply || urlChanged) {
-                setTimeout(() => {
-                    applyBlockEffect();
-                }, urlChanged ? 1000 : 500); // URL切换延迟较长，DOM变化延迟较短
-            }
-        });
-
-        // 开始观察整个文档
-        pageObserver.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-    }
-
-    /**
-     * =================================================================
-     * 大图预览组件 (Magic Lens)
-     * =================================================================
-     */
-
-    // 大图预览状态
-    const LensState = {
-        isVisible: false,
-        currentSrc: null
-    };
-
-    // 初始化大图预览组件
-    function initMagicLens() {
-        // 创建透镜容器
-        const lens = document.createElement('div');
-        lens.id = 'javdb-magic-lens';
-        lens.innerHTML = '<img id="javdb-lens-img" src="">';
-        document.body.appendChild(lens);
-
-        // 绑定事件
-        bindMagicLensEvents();
-
-        debugLog('大图预览组件初始化完成');
-    }
-
-    // 绑定大图预览事件
-    function bindMagicLensEvents() {
-        // 鼠标悬停显示大图
-        document.body.addEventListener('mouseover', function (e) {
-            // 检查开关状态
-            if (!CONFIG.enableImagePreview) return;
-
-            const item = e.target.closest('.movie-list .item');
-            if (item) {
-                const lens = document.getElementById('javdb-magic-lens');
-                const lensImg = document.getElementById('javdb-lens-img');
-
-                if (!lens || !lensImg) return;
-
-                // 获取封面图片
-                const coverImg = item.querySelector('.cover img');
-                if (!coverImg) return;
-
-                let imgSrc = coverImg.src;
-
-                // 尝试获取更大的图片：JavDB 图片 URL 规则
-                // 缩略图格式: https://c0.jdbstatic.com/covers/xx/XXXXXXX.jpg
-                // 大图格式: https://c0.jdbstatic.com/covers/xx/XXXXXXX.jpg (相同)
-                // 但有些情况可能有 thumbs/ 目录，需要替换
-                if (imgSrc) {
-                    // 移除可能存在的 thumbs 路径
-                    imgSrc = imgSrc.replace('/thumbs/', '/');
-                }
-
-                if (imgSrc && imgSrc.trim() && imgSrc !== LensState.currentSrc) {
-                    LensState.isVisible = true;
-                    LensState.currentSrc = imgSrc;
-                    lens.style.display = 'flex';
-
-                    lensImg.style.opacity = '0';
-                    lensImg.src = imgSrc;
-                    lensImg.onload = () => {
-                        if (lensImg) lensImg.style.opacity = '1';
-                    };
-                    lensImg.onerror = () => {
-                        debugLog("封面图片加载失败:", imgSrc);
-                        lens.style.display = 'none';
-                        LensState.isVisible = false;
-                    };
-                } else if (imgSrc && imgSrc.trim()) {
-                    // 同一张图片，直接显示
-                    LensState.isVisible = true;
-                    lens.style.display = 'flex';
-                }
-            }
-        });
-
-        // 鼠标移出隐藏大图
-        document.body.addEventListener('mouseout', function (e) {
-            // 检查开关状态
-            if (!CONFIG.enableImagePreview) return;
-
-            const item = e.target.closest('.movie-list .item');
-            const related = e.relatedTarget;
-            const lens = document.getElementById('javdb-magic-lens');
-
-            if (item && (!related || !item.contains(related))) {
-                LensState.isVisible = false;
-                if (lens) lens.style.display = 'none';
-            }
-        });
-
-        // 智能避让：根据鼠标位置决定大图显示在左边还是右边
-        document.addEventListener('mousemove', function (e) {
-            // 检查开关状态
-            if (!CONFIG.enableImagePreview || !LensState.isVisible) return;
-
-            const lens = document.getElementById('javdb-magic-lens');
-            if (!lens) return;
-
-            const screenWidth = window.innerWidth;
-            const mouseX = e.clientX;
-            const margin = 30;
-
-            // 鼠标在左半屏 -> 图显示在右半屏；反之亦然
-            if (mouseX < screenWidth / 2) {
-                lens.style.left = 'auto';
-                lens.style.right = `${margin}px`;
-            } else {
-                lens.style.right = 'auto';
-                lens.style.left = `${margin}px`;
-            }
-        });
-    }
-
-    // 移除未使用的控制面板函数，保持代码简洁
-
-    // 创建全局悬浮窗
-    function createGlobalFloatingWindow() {
-        // 移除已存在的悬浮窗
-        const existingWindow = document.getElementById('javdb-global-floating-window');
-        if (existingWindow) {
-            existingWindow.remove();
-        }
-
-        // 判断是否在导入页面或正在导入
-        const isImportPage = CONFIG.currentPageType === 'watched' || CONFIG.currentPageType === 'wanted';
-        const isImporting = CONFIG.isImporting || localStorage.getItem('javdb_importing') === 'true';
-
-        // 创建面板
-        const floatingWindow = document.createElement('div');
-        floatingWindow.id = 'javdb-global-floating-window';
-        floatingWindow.className = 'javdb-manager-panel minimized';
-
-        // 添加样式
         const style = document.createElement('style');
         style.textContent = `
             /* === 基础面板：Apple 玻璃拟态 === */
@@ -895,8 +363,13 @@
             .stat-item.full-width .stat-value { font-size: 20px; margin-bottom: 6px; }
 
             .manager-count.importing {
-                background: rgba(255, 159, 10, 0.1);
+                background: transparent;
                 border-color: rgba(255, 159, 10, 0.2);
+            }
+
+            .stat-item.importing-stat {
+                background: transparent;
+                border-color: rgba(255, 159, 10, 0.15);
             }
 
             .manager-tabs {
@@ -1490,6 +963,685 @@
             style.setAttribute('data-javdb-manager', 'true');
             document.head.appendChild(style);
         }
+    }
+
+    // === 通用工具函数 ===
+
+    // 日期格式移除（复用函数，避免5处重复正则）
+    // 支持 .YY.MM.DD 和 .YYYY.MM.DD 两种格式
+    function removeDateFromCode(str) {
+        return str.replace(/\.\d{2}\.\d{2}\.\d{2}/g, '').replace(/\.\d{4}\.\d{2}\.\d{2}/g, '');
+    }
+
+    // 标准化用于匹配的字符串（去除空格，转小写）
+    function normalizeForMatch(str) {
+        return str.replace(/\s+/g, '').toLowerCase();
+    }
+
+    // 配置键名映射（loadConfig/saveConfig 共用）- 使用常量
+    const CONFIG_KEYS = {
+        enableWatchedBlock: CONFIG_KEY.ENABLE_WATCHED_BLOCK,
+        enableWantedBlock: CONFIG_KEY.ENABLE_WANTED_BLOCK,
+        enableLowScoreBlock: CONFIG_KEY.ENABLE_LOW_SCORE_BLOCK,
+        enableImagePreview: CONFIG_KEY.ENABLE_IMAGE_PREVIEW
+    };
+
+    // 从标题元素中提取番号（列表页和详情页通用逻辑）
+    function extractCodeFromTitleElement(containerEl) {
+        if (!containerEl) return null;
+        const strongElement = containerEl.querySelector('strong');
+        if (!strongElement) return null;
+
+        const strongText = strongElement.textContent.trim();
+        const cleanedStrong = removeDateFromCode(strongText);
+        const isPureLetters = /^[a-zA-Z]+$/.test(cleanedStrong.replace(/\s+/g, ''));
+
+        if (isPureLetters) {
+            const fullTitle = containerEl.textContent.trim();
+            const normalizedCode = normalizeCode(fullTitle);
+            debugLog(`提取欧美区完整番号: ${fullTitle} -> 标准化: ${normalizedCode}`);
+            return normalizedCode;
+        } else {
+            const normalizedCode = normalizeCode(strongText);
+            debugLog(`提取日式番号: ${strongText} -> 标准化: ${normalizedCode}`);
+            return normalizedCode;
+        }
+    }
+
+    // 从影片项中提取番号（支持日式和欧美区）
+    // 规则：
+    // - 日式番号（去除日期后仍有数字）：只保留番号，不需要标题，全部大写
+    // - 欧美区番号（去除日期后纯字母）：保留完整番号+标题（不含日期），全部大写
+    function getVideoCodeFromItem(item) {
+        const code = extractCodeFromTitleElement(item.querySelector('.video-title'));
+        if (!code) debugLog('无法从影片项中提取番号');
+        return code;
+    }
+
+    // 不区分大小写和空格的匹配函数
+    function isCodeMatch(code1, code2) {
+        return normalizeForMatch(code1) === normalizeForMatch(code2);
+    }
+
+    // 不区分大小写和空格的前缀匹配函数
+    function isCodePrefixMatch(prefix, fullCode) {
+        return normalizeForMatch(fullCode).startsWith(normalizeForMatch(prefix));
+    }
+
+    // 番号标准化函数
+    // - 欧美区（去除日期后纯字母）：全部大写，保留完整标题
+    // - 日厂（去除日期后仍有数字）：全部大写，只保留字母、数字、-、_
+    function normalizeCode(code) {
+        if (!code || typeof code !== 'string') return code;
+
+        let normalized = removeDateFromCode(code.replace(/\s+/g, ''));
+        const isPureLetters = /^[a-zA-Z]+$/.test(normalized);
+
+        if (isPureLetters) {
+            return normalized.toUpperCase();
+        } else {
+            normalized = normalized.toUpperCase();
+            normalized = normalized.replace(/[^A-Z0-9\-_]/g, '');
+            return normalized;
+        }
+    }
+
+
+
+
+
+    // 查找匹配的番号（不区分大小写和空格，支持前缀匹配）
+    function findMatchingCode(code, codeList) {
+        return codeList.find(savedCode => isCodeMatch(code, savedCode));
+    }
+
+    // 查找前缀匹配的番号（不区分大小写和空格）
+    function findPrefixMatchingCode(prefix, codeList) {
+        return codeList.filter(savedCode => isCodePrefixMatch(prefix, savedCode));
+    }
+
+    // 创建开关组件
+    function createSwitch(label, configKey, isChecked) {
+        const switchItem = document.createElement('div');
+        switchItem.className = 'switch-item';
+
+        const switchLabel = document.createElement('label');
+        switchLabel.className = 'switch-label';
+        switchLabel.textContent = label;
+
+        const switchWrapper = document.createElement('label');
+        switchWrapper.className = 'switch';
+
+        const switchInput = document.createElement('input');
+        switchInput.type = 'checkbox';
+        switchInput.checked = isChecked;
+        switchInput.addEventListener('change', (e) => {
+            CONFIG[configKey] = e.target.checked;
+            saveConfig();
+            applyBlockEffect(); // 重新应用效果
+            debugLog(`${label}开关: ${e.target.checked ? '开启' : '关闭'}`);
+        });
+
+        const slider = document.createElement('span');
+        slider.className = 'slider';
+
+        switchWrapper.appendChild(switchInput);
+        switchWrapper.appendChild(slider);
+
+        switchItem.appendChild(switchLabel);
+        switchItem.appendChild(switchWrapper);
+
+        return switchItem;
+    }
+
+    // 测试函数：分析页面评分结构
+    function debugScoreStructure() {
+        const movieItems = document.querySelectorAll('.movie-list .item');
+        console.log(`找到 ${movieItems.length} 个影片项`);
+
+        if (movieItems.length > 0) {
+            const firstItem = movieItems[0];
+            console.log('第一个影片项的HTML结构:', firstItem.innerHTML.substring(0, 500));
+
+            const scoreElements = firstItem.querySelectorAll('.score, .score .value, .score > .value');
+            console.log('找到的评分元素:', scoreElements.length);
+
+            scoreElements.forEach((el, index) => {
+                console.log(`评分元素${index}:`, {
+                    className: el.className,
+                    textContent: el.textContent,
+                    innerHTML: el.innerHTML.substring(0, 100)
+                });
+            });
+        }
+    }
+
+    // 加载配置
+    function loadConfig() {
+        for (const key in CONFIG_KEYS) {
+            const savedValue = localStorage.getItem(CONFIG_KEYS[key]);
+            if (savedValue !== null) {
+                CONFIG[key] = savedValue === 'true';
+            }
+        }
+        debugLog('加载配置:', {
+            enableWatchedBlock: CONFIG.enableWatchedBlock,
+            enableWantedBlock: CONFIG.enableWantedBlock,
+            enableLowScoreBlock: CONFIG.enableLowScoreBlock,
+            enableImagePreview: CONFIG.enableImagePreview
+        });
+    }
+
+    // 保存配置
+    function saveConfig() {
+        for (const key in CONFIG_KEYS) {
+            localStorage.setItem(CONFIG_KEYS[key], CONFIG[key].toString());
+        }
+        debugLog('保存配置:', {
+            enableWatchedBlock: CONFIG.enableWatchedBlock,
+            enableWantedBlock: CONFIG.enableWantedBlock,
+            enableLowScoreBlock: CONFIG.enableLowScoreBlock,
+            enableImagePreview: CONFIG.enableImagePreview
+        });
+    }
+
+    // 初始化
+    function init() {
+        if (CONFIG.panelCreated) return;
+
+        // 加载配置
+        loadConfig();
+
+        // 确定当前页面类型
+        CONFIG.currentPageType = window.location.href.includes('watched_videos') ? 'watched' :
+            window.location.href.includes('want_watch_videos') ? 'wanted' : null;
+
+        // 设置页面标识，供CSS使用
+        if (CONFIG.currentPageType === 'watched') {
+            document.body.setAttribute('data-page', 'watched');
+        } else if (CONFIG.currentPageType === 'wanted') {
+            document.body.setAttribute('data-page', 'wanted');
+        } else {
+            document.body.removeAttribute('data-page');
+        }
+
+        // 创建全局悬浮窗
+        createGlobalFloatingWindow();
+        CONFIG.panelCreated = true;
+
+        // 初始化大图预览组件
+        initMagicLens();
+
+        // 应用屏蔽效果
+        applyBlockEffect();
+
+        // 监听页面变化，动态应用屏蔽效果
+        observePageChanges();
+
+        // 检查是否有待处理的导入任务
+        const pendingImport = localStorage.getItem(STORAGE_KEY.PENDING_IMPORT);
+        if (pendingImport && CONFIG.currentPageType === pendingImport) {
+            // 延迟一下确保页面完全加载
+            setTimeout(() => {
+                startImport(pendingImport);
+                localStorage.removeItem(STORAGE_KEY.PENDING_IMPORT); // 清除待处理状态
+            }, 1000);
+        }
+
+        // 检查是否是翻页后的继续导入
+        const isImporting = localStorage.getItem(STORAGE_KEY.IMPORTING) === 'true';
+        if (isImporting && CONFIG.currentPageType) {
+            const importType = localStorage.getItem(STORAGE_KEY.IMPORT_TYPE);
+            const importedCount = localStorage.getItem(STORAGE_KEY.IMPORTED_COUNT);
+
+            if (importType === CONFIG.currentPageType) {
+                // 延迟一下确保页面完全加载
+                setTimeout(() => {
+                    // 更新内存状态
+                    CONFIG.isImporting = true;
+                    CONFIG.importedCount = importedCount ? parseInt(importedCount) : 0;
+                    CONFIG.currentPageType = importType;
+
+                    // 更新UI
+                    updateGlobalCount();
+
+                    // 继续导入
+                    extractAndSaveCurrentPage();
+                }, 2000); // 翻页需要更长的等待时间
+            }
+        }
+
+        // 添加点击按钮自动导入功能
+        if (window.location.pathname.includes('/v/')) {
+            // 影片详情页，绑定想看/看過按钮
+            bindVideoDetailButtons();
+        }
+    }
+
+    // 获取当前页面搜索词
+    function getSearchQuery() {
+        const searchInput = document.getElementById('video-search');
+        return searchInput ? searchInput.value.trim() : '';
+    }
+
+    // 万能标准化匹配逻辑
+    function isSearchMatch(query, videoCode) {
+        if (!query || !videoCode) return false;
+
+        // 标准化：转大写，只保留字母和数字
+        const sQuery = query.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const sCode = videoCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+        if (!sQuery || !sCode) return false;
+
+        // 1. 完全相等（标准化后）
+        if (sQuery === sCode) return true;
+
+        // 2. 针对 FC2 的特殊处理
+        // 如果搜纯数字，匹配 FC2 + 数字
+        if (/^\d+$/.test(sQuery)) {
+            if (sCode === 'FC2' + sQuery) return true;
+        }
+
+        // 3. 针对搜 FC2 数字却漏搜字母的特殊处理
+        if (sQuery === 'FC2' + sCode) return true;
+
+        return false;
+    }
+
+    // 屏蔽功能相关函数
+    // 应用屏蔽效果和高亮评分 - 优化数据读取和匹配性能
+    function applyBlockEffect() {
+        debugLog('应用屏蔽效果');
+
+        // 查找所有影片项
+        const movieItems = document.querySelectorAll('.movie-list .item');
+        debugLog(`找到 ${movieItems.length} 个影片项`);
+
+        if (movieItems.length === 0) return;
+
+        // 性能优化：使用带缓存的 API 读取数据
+        const watchedCodes = getCachedValue(CONFIG.watchedStorageKey, []);
+        const wantedCodes = getCachedValue(CONFIG.wantedStorageKey, []);
+
+        // 使用 Set 存储标准化后的番号，O(1) 查找
+        const watchedSet = new Set(watchedCodes.map(c => normalizeForMatch(c)));
+        const wantedSet = new Set(wantedCodes.map(c => normalizeForMatch(c)));
+
+        const query = getSearchQuery();
+        const normalizedQuery = query ? normalizeForMatch(query) : '';
+
+        movieItems.forEach(item => {
+            // 清除所有相关类
+            item.classList.remove('javdb-blocked', 'javdb-watched', 'javdb-wanted',
+                'javdb-low-score', 'javdb-normal-score', 'javdb-high-score', 'javdb-excellent', 'javdb-search-match');
+
+            // 应用屏蔽效果（看过/想看）- 传入 Set 优化查找
+            applyBlockEffectInternalOptimized(item, watchedSet, wantedSet, normalizedQuery);
+
+            // 应用评分效果（低分屏蔽+高亮）
+            applyScoreHighlight(item);
+        });
+    }
+
+    // 内部屏蔽效果应用函数 - 使用 Set 优化版本
+    function applyBlockEffectInternalOptimized(item, watchedSet, wantedSet, normalizedQuery) {
+        // 使用通用函数提取番号
+        const code = getVideoCodeFromItem(item);
+        if (!code) return;
+
+        const normalizedCode = normalizeForMatch(code);
+
+        // 1. 处理精确搜索匹配（金边高亮优先）- 使用标准化后的查询
+        if (normalizedQuery && isSearchMatch(normalizedQuery, code)) {
+            item.classList.add('javdb-search-match');
+            debugLog(`精确搜索匹配: ${code}`);
+        }
+
+        let shouldBlock = false;
+
+        // 使用 Set 进行 O(1) 查找
+        const inWatched = watchedSet.has(normalizedCode);
+        const inWanted = wantedSet.has(normalizedCode);
+
+        // 根据当前页面类型决定屏蔽策略
+        if (CONFIG.currentPageType === 'watched') {
+            if (inWatched && CONFIG.enableWatchedBlock) {
+                item.classList.add('javdb-watched');
+                shouldBlock = true;
+                debugLog(`看过页面屏蔽看过番号: ${code}`);
+            } else if (inWanted) {
+                item.classList.add('javdb-wanted');
+                debugLog(`看过页面显示想看番号: ${code}（不屏蔽）`);
+            }
+        } else if (CONFIG.currentPageType === 'wanted') {
+            if (inWanted && CONFIG.enableWantedBlock) {
+                item.classList.add('javdb-wanted');
+                shouldBlock = true;
+                debugLog(`想看页面屏蔽想看番号: ${code}`);
+            } else if (inWatched) {
+                item.classList.add('javdb-watched');
+                debugLog(`想看页面显示看过番号: ${code}（不屏蔽）`);
+            }
+        } else {
+            // 在其他页面，屏蔽所有
+            if (inWatched && CONFIG.enableWatchedBlock) {
+                item.classList.add('javdb-watched');
+                shouldBlock = true;
+                debugLog(`其他页面屏蔽看过番号: ${code}`);
+            }
+            if (inWanted && CONFIG.enableWantedBlock) {
+                item.classList.add('javdb-wanted');
+                shouldBlock = true;
+                debugLog(`其他页面屏蔽想看番号: ${code}`);
+            }
+        }
+
+        if (shouldBlock) {
+            item.classList.add('javdb-blocked');
+        }
+    }
+
+    // 保留原函数用于兼容其他调用（已废弃，逐步迁移）
+    function applyBlockEffectInternal(item, watchedCodes, wantedCodes, query) {
+        const watchedSet = new Set(watchedCodes.map(c => normalizeForMatch(c)));
+        const wantedSet = new Set(wantedCodes.map(c => normalizeForMatch(c)));
+        applyBlockEffectInternalOptimized(item, watchedSet, wantedSet, normalizeForMatch(query || ''));
+    }
+
+    // 根据评价人数获取评分阈值
+    function getScoreThresholds(reviewCount) {
+        if (reviewCount < 10) {
+            return { lowScore: null, highScore: null }; // 样本太小，不做判断
+        } else if (reviewCount < 50) {
+            return { lowScore: 3.0, highScore: 4.4 };
+        } else if (reviewCount < 100) {
+            return { lowScore: 3.1, highScore: 4.3 };
+        } else if (reviewCount < 300) {
+            return { lowScore: 3.2, highScore: 4.2 };
+        } else if (reviewCount < 1000) {
+            return { lowScore: 3.3, highScore: 4.1 };
+        } else {
+            return { lowScore: 3.4, highScore: 4.0 };
+        }
+    }
+
+    // 应用评分效果
+    function applyScoreHighlight(item) {
+        // 尝试多种可能的评分元素选择器
+        let scoreElement = item.querySelector('.score .value') ||
+            item.querySelector('.score > .value') ||
+            item.querySelector('.score');
+
+        if (!scoreElement) return;
+
+        // 获取评分文本，可能包含HTML编码
+        let scoreText = scoreElement.textContent || scoreElement.innerText || '';
+        scoreText = scoreText.trim();
+
+        // 解码HTML实体
+        scoreText = scoreText.replace(/=E5=88=86/g, '分')
+            .replace(/=E4=BA=BA/g, '人')
+            .replace(/=E7=94=A8/g, '用')
+            .replace(/=E8=A9=95=E5=83=B9/g, '評價')
+            .replace(/=E7=9C=8B/g, '看')
+            .replace(/=E7=94=B1/g, '由');
+
+        // 匹配评分格式：X.XX分, 由XXX人評價
+        const scoreMatch = scoreText.match(/([\d.]+)分[,，]\s*由(\d+)人(?:評價|评价)/);
+
+        // 清除之前的评分相关类
+        item.classList.remove('javdb-low-score', 'javdb-high-score');
+
+        if (!CONFIG.enableLowScoreBlock) return;
+
+        let score, reviewCount;
+
+        if (scoreMatch) {
+            score = parseFloat(scoreMatch[1]);
+            reviewCount = parseInt(scoreMatch[2]);
+        } else {
+            // 宽松匹配：只提取分数
+            const looseMatch = scoreText.match(/([\d.]+)/);
+            if (!looseMatch) {
+                debugLog(`无法解析评分，正常显示`);
+                return;
+            }
+            score = parseFloat(looseMatch[1]);
+            reviewCount = 0; // 无法获取人数时按0处理
+        }
+
+        // 获取阈值
+        const thresholds = getScoreThresholds(reviewCount);
+
+        // 样本太小，不做判断
+        if (thresholds.lowScore === null) {
+            debugLog(`评价人数较少(${reviewCount}人)，正常显示: ${score}分`);
+            return;
+        }
+
+        // 判断评分档位
+        if (score < thresholds.lowScore) {
+            item.classList.add('javdb-low-score');
+            debugLog(`低分: ${score}分, ${reviewCount}人评价, 阈值${thresholds.lowScore}`);
+        } else if (score >= thresholds.highScore) {
+            item.classList.add('javdb-high-score');
+            debugLog(`高分: ${score}分, ${reviewCount}人评价, 阈值${thresholds.highScore}`);
+        } else {
+            debugLog(`正常: ${score}分, ${reviewCount}人评价`);
+        }
+    }
+
+    // 全局持有 observer 以便卸载
+    let pageObserver = null;
+
+    // 监听页面变化 - 使用防抖优化高频触发
+    function observePageChanges() {
+        let lastUrl = window.location.href;
+
+        // 创建防抖版本的 applyBlockEffect，避免高频 DOM 操作
+        const debouncedApplyBlockEffect = debounce(() => {
+            applyBlockEffect();
+        }, 300);
+
+        // 创建MutationObserver同时监听DOM变化和URL变化
+        pageObserver = new MutationObserver((mutations) => {
+            let shouldReapply = false;
+            let urlChanged = false;
+
+            // 检查URL变化
+            const currentUrl = window.location.href;
+            if (currentUrl !== lastUrl) {
+                lastUrl = currentUrl;
+                urlChanged = true;
+
+                // 更新页面类型和标识
+                CONFIG.currentPageType = window.location.href.includes('watched_videos') ? 'watched' :
+                    window.location.href.includes('want_watch_videos') ? 'wanted' : null;
+
+                if (CONFIG.currentPageType === 'watched') {
+                    document.body.setAttribute('data-page', 'watched');
+                } else if (CONFIG.currentPageType === 'wanted') {
+                    document.body.setAttribute('data-page', 'wanted');
+                } else {
+                    document.body.removeAttribute('data-page');
+                }
+            }
+
+            // 检查DOM变化 - 只检查新增的影片项
+            if (!urlChanged) {
+                for (const mutation of mutations) {
+                    if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                        for (const node of mutation.addedNodes) {
+                            if (node.nodeType === Node.ELEMENT_NODE) {
+                                // 快速判断：检查是否包含影片项
+                                if (node.classList?.contains('movie-list') ||
+                                    node.classList?.contains('item') ||
+                                    node.querySelector?.('.movie-list .item')) {
+                                    shouldReapply = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (shouldReapply) break;
+                    }
+                }
+            }
+
+            // 如果有变化，使用防抖重新应用屏蔽效果
+            if (urlChanged) {
+                // URL 变化使用较长延迟，确保页面完全加载
+                setTimeout(() => applyBlockEffect(), 800);
+            } else if (shouldReapply) {
+                // DOM 变化使用防抖，合并多次触发
+                debouncedApplyBlockEffect();
+            }
+        });
+
+        // 开始观察整个文档
+        pageObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    /**
+     * =================================================================
+     * 大图预览组件 (Magic Lens)
+     * =================================================================
+     */
+
+    // 大图预览状态
+    const LensState = {
+        isVisible: false,
+        currentSrc: null
+    };
+
+    // 初始化大图预览组件
+    function initMagicLens() {
+        // 创建透镜容器
+        const lens = document.createElement('div');
+        lens.id = 'javdb-magic-lens';
+        lens.innerHTML = '<img id="javdb-lens-img" src="">';
+        document.body.appendChild(lens);
+
+        // 绑定事件
+        bindMagicLensEvents();
+
+        debugLog('大图预览组件初始化完成');
+    }
+
+    // 绑定大图预览事件
+    function bindMagicLensEvents() {
+        // 鼠标悬停显示大图
+        document.body.addEventListener('mouseover', function (e) {
+            // 检查开关状态
+            if (!CONFIG.enableImagePreview) return;
+
+            const item = e.target.closest('.movie-list .item');
+            if (item) {
+                const lens = document.getElementById('javdb-magic-lens');
+                const lensImg = document.getElementById('javdb-lens-img');
+
+                if (!lens || !lensImg) return;
+
+                // 获取封面图片
+                const coverImg = item.querySelector('.cover img');
+                if (!coverImg) return;
+
+                let imgSrc = coverImg.src;
+
+                // 尝试获取更大的图片：JavDB 图片 URL 规则
+                // 缩略图格式: https://c0.jdbstatic.com/covers/xx/XXXXXXX.jpg
+                // 大图格式: https://c0.jdbstatic.com/covers/xx/XXXXXXX.jpg (相同)
+                // 但有些情况可能有 thumbs/ 目录，需要替换
+                if (imgSrc) {
+                    // 移除可能存在的 thumbs 路径
+                    imgSrc = imgSrc.replace('/thumbs/', '/');
+                }
+
+                if (imgSrc && imgSrc.trim() && imgSrc !== LensState.currentSrc) {
+                    LensState.isVisible = true;
+                    LensState.currentSrc = imgSrc;
+                    lens.style.display = 'flex';
+
+                    lensImg.style.opacity = '0';
+                    lensImg.src = imgSrc;
+                    lensImg.onload = () => {
+                        if (lensImg) lensImg.style.opacity = '1';
+                    };
+                    lensImg.onerror = () => {
+                        debugLog("封面图片加载失败:", imgSrc);
+                        lens.style.display = 'none';
+                        LensState.isVisible = false;
+                    };
+                } else if (imgSrc && imgSrc.trim()) {
+                    // 同一张图片，直接显示
+                    LensState.isVisible = true;
+                    lens.style.display = 'flex';
+                }
+            }
+        });
+
+        // 鼠标移出隐藏大图
+        document.body.addEventListener('mouseout', function (e) {
+            // 检查开关状态
+            if (!CONFIG.enableImagePreview) return;
+
+            const item = e.target.closest('.movie-list .item');
+            const related = e.relatedTarget;
+            const lens = document.getElementById('javdb-magic-lens');
+
+            if (item && (!related || !item.contains(related))) {
+                LensState.isVisible = false;
+                if (lens) lens.style.display = 'none';
+            }
+        });
+
+        // 智能避让：根据鼠标位置决定大图显示在左边还是右边
+        document.addEventListener('mousemove', function (e) {
+            // 检查开关状态
+            if (!CONFIG.enableImagePreview || !LensState.isVisible) return;
+
+            const lens = document.getElementById('javdb-magic-lens');
+            if (!lens) return;
+
+            const screenWidth = window.innerWidth;
+            const mouseX = e.clientX;
+            const margin = 30;
+
+            // 鼠标在左半屏 -> 图显示在右半屏；反之亦然
+            if (mouseX < screenWidth / 2) {
+                lens.style.left = 'auto';
+                lens.style.right = `${margin}px`;
+            } else {
+                lens.style.right = 'auto';
+                lens.style.left = `${margin}px`;
+            }
+        });
+    }
+
+    // 移除未使用的控制面板函数，保持代码简洁
+
+    // 创建全局悬浮窗
+    function createGlobalFloatingWindow() {
+        // 移除已存在的悬浮窗
+        const existingWindow = document.getElementById('javdb-global-floating-window');
+        if (existingWindow) {
+            existingWindow.remove();
+        }
+
+        // 判断是否在导入页面或正在导入
+        const isImportPage = CONFIG.currentPageType === PAGE_TYPE.WATCHED || CONFIG.currentPageType === PAGE_TYPE.WANTED;
+        const isImporting = CONFIG.isImporting || localStorage.getItem(STORAGE_KEY.IMPORTING) === 'true';
+
+        // 注入 CSS 样式（只执行一次）
+        injectStyles();
+
+        // 创建面板
+        const floatingWindow = document.createElement('div');
+        floatingWindow.id = 'javdb-global-floating-window';
+        floatingWindow.className = 'javdb-manager-panel minimized';
 
         // 最小化状态的内容
         const minimizedContent = document.createElement('div');
@@ -1682,8 +1834,8 @@
         cleanupButton.addEventListener('click', (e) => {
             e.stopPropagation();
 
-            const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
-            const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
+            const watchedCodes = getCachedValue(CONFIG.watchedStorageKey, []);
+            const wantedCodes = getCachedValue(CONFIG.wantedStorageKey, []);
             const totalCount = watchedCodes.length + wantedCodes.length;
 
             if (totalCount === 0) {
@@ -1694,8 +1846,8 @@
             // 二次确认对话框
             if (confirm(`⚠️ 确认清空所有数据？\n\n此操作将删除：\n• 看过列表：${watchedCodes.length} 个\n• 想看列表：${wantedCodes.length} 个\n\n此功能用于清除过去错误格式的历史数据，清空后不可恢复！`)) {
                 // 清空数据
-                GM_setValue(CONFIG.watchedStorageKey, []);
-                GM_setValue(CONFIG.wantedStorageKey, []);
+                setCachedValue(CONFIG.watchedStorageKey, []);
+                setCachedValue(CONFIG.wantedStorageKey, []);
 
                 // 显示结果
                 cleanupResult.style.display = 'block';
@@ -1857,17 +2009,17 @@
     function updateGlobalCount() {
         debugLog('更新UI显示，当前状态:', {
             isImporting: CONFIG.isImporting,
-            localStorageImporting: localStorage.getItem('javdb_importing')
+            localStorageImporting: localStorage.getItem(STORAGE_KEY.IMPORTING)
         });
 
-        const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
-        const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
+        const watchedCodes = getCachedValue(CONFIG.watchedStorageKey, []);
+        const wantedCodes = getCachedValue(CONFIG.wantedStorageKey, []);
         const totalCount = watchedCodes.length + wantedCodes.length;
 
         // 从localStorage读取当前状态，确保页面刷新后状态正确
-        const isImporting = localStorage.getItem('javdb_importing') === 'true';
-        const importType = localStorage.getItem('javdb_import_type');
-        const importedCount = localStorage.getItem('javdb_imported_count') || '0';
+        const isImporting = localStorage.getItem(STORAGE_KEY.IMPORTING) === 'true';
+        const importType = localStorage.getItem(STORAGE_KEY.IMPORT_TYPE);
+        const importedCount = localStorage.getItem(STORAGE_KEY.IMPORTED_COUNT) || '0';
 
         debugLog('UI更新参数:', {
             isImporting,
@@ -1906,12 +2058,12 @@
                 countDiv.innerHTML = `
                     <div style="font-size: 13px; color: #ff9f0a; text-align: center; font-weight: 600; margin-bottom: 8px;">🚀 正在导入${typeText}...</div>
                     <div class="stat-grid">
-                        <div class="stat-item wanted">
-                            <div class="stat-value">${importedCount}</div>
+                        <div class="stat-item importing-stat">
+                            <div class="stat-value" style="color: #ff9f0a;">${importedCount}</div>
                             <div class="stat-label">已导入</div>
                         </div>
-                        <div class="stat-item">
-                            <div class="stat-value">${currentPageItems}</div>
+                        <div class="stat-item importing-stat">
+                            <div class="stat-value" style="color: #ffffff;">${currentPageItems}</div>
                             <div class="stat-label">本页总计</div>
                         </div>
                     </div>
@@ -1987,21 +2139,21 @@
     function startImport(type) {
         // 如果当前不在对应页面，先跳转并记录待导入状态
         if (type === 'watched' && !window.location.href.includes('watched_videos')) {
-            localStorage.setItem('javdb_pending_import', 'watched');
+            localStorage.setItem(STORAGE_KEY.PENDING_IMPORT, PAGE_TYPE.WATCHED);
             window.location.href = 'https://javdb.com/users/watched_videos?page=1';
             return;
         }
         // 如果当前不在对应页面，先跳转并记录待导入状态
-        if (type === 'wanted' && !window.location.href.includes('want_watch_videos')) {
-            localStorage.setItem('javdb_pending_import', 'wanted');
+        if (type === PAGE_TYPE.WANTED && !window.location.href.includes('want_watch_videos')) {
+            localStorage.setItem(STORAGE_KEY.PENDING_IMPORT, PAGE_TYPE.WANTED);
             window.location.href = 'https://javdb.com/users/want_watch_videos?page=1';
             return;
         }
 
         // 设置localStorage状态
-        localStorage.setItem('javdb_importing', 'true');
-        localStorage.setItem('javdb_imported_count', '0');
-        localStorage.setItem('javdb_import_type', type);
+        localStorage.setItem(STORAGE_KEY.IMPORTING, 'true');
+        localStorage.setItem(STORAGE_KEY.IMPORTED_COUNT, '0');
+        localStorage.setItem(STORAGE_KEY.IMPORT_TYPE, type);
 
         // 更新内存状态
         CONFIG.isImporting = true;
@@ -2024,10 +2176,10 @@
         saveCurrentPageCodes();
 
         // 立即清除localStorage状态
-        localStorage.removeItem('javdb_pending_import');
-        localStorage.removeItem('javdb_importing');
-        localStorage.removeItem('javdb_imported_count');
-        localStorage.removeItem('javdb_import_type');
+        localStorage.removeItem(STORAGE_KEY.PENDING_IMPORT);
+        localStorage.removeItem(STORAGE_KEY.IMPORTING);
+        localStorage.removeItem(STORAGE_KEY.IMPORTED_COUNT);
+        localStorage.removeItem(STORAGE_KEY.IMPORT_TYPE);
 
         // 更新内存状态
         CONFIG.isImporting = false;
@@ -2046,20 +2198,21 @@
         debugLog('停止导入完成');
     }
 
-    // 保存当前页面的番号
+    // 保存当前页面的番号 - 使用 Set 优化去重
     function saveCurrentPageCodes() {
         debugLog('保存当前页面的番号');
 
         const items = document.querySelectorAll('.movie-list .item');
-        const pageCodes = [];
+        const pageCodesSet = new Set(); // 使用 Set 替代数组，O(1) 去重
 
         items.forEach(item => {
-            // 使用通用函数提取番号
             const code = getVideoCodeFromItem(item);
-            if (code && !pageCodes.includes(code)) {
-                pageCodes.push(code);
+            if (code) {
+                pageCodesSet.add(code);
             }
         });
+
+        const pageCodes = [...pageCodesSet];
 
         if (pageCodes.length > 0) {
             debugLog(`当前页面找到 ${pageCodes.length} 个番号:`, pageCodes);
@@ -2069,7 +2222,7 @@
 
             // 同步到localStorage
             if (CONFIG.isImporting) {
-                localStorage.setItem('javdb_imported_count', CONFIG.importedCount.toString());
+                localStorage.setItem(STORAGE_KEY.IMPORTED_COUNT, CONFIG.importedCount.toString());
             }
 
             debugLog(`已保存当前页面番号，本次导入总数: ${CONFIG.importedCount}`);
@@ -2097,10 +2250,10 @@
         debugLog('开始完成导入流程');
 
         // 清除所有localStorage状态
-        localStorage.removeItem('javdb_pending_import');
-        localStorage.removeItem('javdb_importing');
-        localStorage.removeItem('javdb_imported_count');
-        localStorage.removeItem('javdb_import_type');
+        localStorage.removeItem(STORAGE_KEY.PENDING_IMPORT);
+        localStorage.removeItem(STORAGE_KEY.IMPORTING);
+        localStorage.removeItem(STORAGE_KEY.IMPORTED_COUNT);
+        localStorage.removeItem(STORAGE_KEY.IMPORT_TYPE);
 
         // 更新内存状态
         CONFIG.isImporting = false;
@@ -2133,39 +2286,40 @@
         });
     }
 
-    // 提取并保存当前页面的番号
+    // 提取并保存当前页面的番号 - 使用 Set 优化去重
     function extractAndSaveCurrentPage() {
         // 双重检查：内存状态和localStorage状态
-        if (!CONFIG.isImporting || localStorage.getItem('javdb_importing') !== 'true') {
+        if (!CONFIG.isImporting || localStorage.getItem(STORAGE_KEY.IMPORTING) !== 'true') {
             debugLog('导入已停止，取消当前页面处理');
             return;
         }
 
         const items = document.querySelectorAll('.movie-list .item');
-        const pageCodes = [];
+        const pageCodesSet = new Set(); // 使用 Set 替代数组，O(1) 去重
 
         items.forEach(item => {
-            // 使用通用函数提取番号
             const code = getVideoCodeFromItem(item);
-            if (code && !pageCodes.includes(code)) {
-                pageCodes.push(code);
+            if (code) {
+                pageCodesSet.add(code);
             }
         });
+
+        const pageCodes = [...pageCodesSet];
 
         // 保存番号
         saveCodes(pageCodes);
 
-        // 更新计数
-        if (pageCodes.length > 0) {
-            localStorage.setItem('javdb_imported_count', CONFIG.importedCount.toString());
-        }
+            // 更新计数
+            if (pageCodes.length > 0) {
+                localStorage.setItem(STORAGE_KEY.IMPORTED_COUNT, CONFIG.importedCount.toString());
+            }
 
         updateGlobalCount();
 
         // 检查是否有下一页
         setTimeout(() => {
             // 再次检查状态，防止在等待期间被停止
-            if (CONFIG.isImporting && localStorage.getItem('javdb_importing') === 'true') {
+            if (CONFIG.isImporting && localStorage.getItem(STORAGE_KEY.IMPORTING) === 'true') {
                 goToNextPage();
             } else {
                 debugLog('在等待翻页期间检测到停止信号');
@@ -2173,33 +2327,35 @@
         }, 1000);
     }
 
-    // 保存番号
+    // 保存番号 - 使用 Set 优化去重性能
     function saveCodes(newCodes) {
         const storageKey = CONFIG.currentPageType === 'watched' ? CONFIG.watchedStorageKey : CONFIG.wantedStorageKey;
         const oppositeKey = CONFIG.currentPageType === 'watched' ? CONFIG.wantedStorageKey : CONFIG.watchedStorageKey;
-        const existingCodes = GM_getValue(storageKey, []);
-        const oppositeCodes = GM_getValue(oppositeKey, []);
 
-        // 对新番号进行标准化处理
-        const normalizedNewCodes = newCodes.map(code => normalizeCode(code));
+        // 使用 Set 存储标准化后的新番号，O(n) 去重
+        const normalizedNewCodes = [...new Set(newCodes.map(code => normalizeCode(code)).filter(Boolean))];
+        if (normalizedNewCodes.length === 0) return;
 
-        // 从对面列表中移除当前导入的番号（不区分大小写和空格）
-        const newOppositeCodes = oppositeCodes.filter(code => !normalizedNewCodes.some(newCode => isCodeMatch(code, newCode)));
+        // 使用 Set 优化对面列表的去重检查，O(n) 而非 O(n²)
+        const newCodesSet = new Set(normalizedNewCodes.map(c => normalizeForMatch(c)));
+        const oppositeCodes = getCachedValue(oppositeKey, []);
+        const newOppositeCodes = oppositeCodes.filter(code => !newCodesSet.has(normalizeForMatch(code)));
+
         if (newOppositeCodes.length !== oppositeCodes.length) {
-            GM_setValue(oppositeKey, newOppositeCodes.sort());
+            setCachedValue(oppositeKey, newOppositeCodes.sort());
             debugLog(`从对面列表移除了 ${oppositeCodes.length - newOppositeCodes.length} 个重复番号`);
         }
 
-        // 合并、去重并排序
-        const allCodes = [...new Set([...existingCodes, ...normalizedNewCodes])].sort();
+        // 使用 Set 合并去重，O(n)
+        const existingCodes = getCachedValue(storageKey, []);
+        const allCodesSet = new Set([...existingCodes, ...normalizedNewCodes]);
+        const allCodes = [...allCodesSet].sort();
 
         // 保存
-        GM_setValue(storageKey, allCodes);
+        setCachedValue(storageKey, allCodes);
 
-        // 计算新增数量（不包括从对面列表移除的）
+        // 计算新增数量
         const newCount = allCodes.length - existingCodes.length;
-
-        // 更新内存计数
         CONFIG.importedCount += newCount;
 
         // 更新全局计数显示
@@ -2227,7 +2383,7 @@
     // 跳转到下一页
     function goToNextPage() {
         // 双重检查状态
-        if (!CONFIG.isImporting || localStorage.getItem('javdb_importing') !== 'true') {
+        if (!CONFIG.isImporting || localStorage.getItem(STORAGE_KEY.IMPORTING) !== 'true') {
             debugLog('导入已停止，取消翻页');
             return;
         }
@@ -2260,15 +2416,15 @@
             debugLog('准备跳转到下一页:', nextPageUrl);
 
             // 最后一次状态检查
-            if (localStorage.getItem('javdb_importing') !== 'true') {
+            if (localStorage.getItem(STORAGE_KEY.IMPORTING) !== 'true') {
                 debugLog('翻页前检查到停止信号，取消翻页');
                 return;
             }
 
             // 保存当前导入状态到localStorage
-            localStorage.setItem('javdb_importing', 'true');
-            localStorage.setItem('javdb_imported_count', CONFIG.importedCount.toString());
-            localStorage.setItem('javdb_import_type', CONFIG.currentPageType);
+            localStorage.setItem(STORAGE_KEY.IMPORTING, 'true');
+            localStorage.setItem(STORAGE_KEY.IMPORTED_COUNT, CONFIG.importedCount.toString());
+            localStorage.setItem(STORAGE_KEY.IMPORT_TYPE, CONFIG.currentPageType);
 
             debugLog('已保存导入状态，准备跳转到下一页');
 
@@ -2355,17 +2511,21 @@
         });
     }
 
-    // 智能输入处理
+    // 智能输入处理 - 使用防抖和 Set 优化
+    const debouncedHandleSmartInput = debounce(() => {
+        handleSmartInputCore();
+    }, 150);
+
     function handleSmartInput() {
+        debouncedHandleSmartInput();
+    }
+
+    // 核心处理逻辑
+    function handleSmartInputCore() {
         const smartInput = document.getElementById('smart-input');
         const smartResult = document.getElementById('smart-result');
         const smartActions = document.getElementById('smart-actions');
         const code = smartInput.value.trim();
-
-        // 清除之前的定时器
-        if (window.smartInputTimer) {
-            clearTimeout(window.smartInputTimer);
-        }
 
         // 如果输入为空，隐藏结果
         if (!code) {
@@ -2374,105 +2534,122 @@
             return;
         }
 
-        // 立即处理，实时匹配
-        const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
-        const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
-        const allCodes = [...watchedCodes, ...wantedCodes];
+        // 读取数据并使用 Set 优化查找（使用缓存）
+        const watchedCodes = getCachedValue(CONFIG.watchedStorageKey, []);
+        const wantedCodes = getCachedValue(CONFIG.wantedStorageKey, []);
 
+        // 构建查找映射，O(1) 查询
+        const watchedMap = new Map(watchedCodes.map(c => [normalizeForMatch(c), c]));
+        const wantedMap = new Map(wantedCodes.map(c => [normalizeForMatch(c), c]));
+
+        const normalizedInput = normalizeForMatch(code);
         let found = false;
         let location = '';
+        let matchedCode = null;
         let candidates = [];
 
-        // 精确匹配（不区分大小写和空格）
-        const watchedMatch = findMatchingCode(code, watchedCodes);
-        const wantedMatch = findMatchingCode(code, wantedCodes);
-        let matchedCode = null;
-
-        if (watchedMatch) {
+        // 精确匹配（O(1) 查找）
+        if (watchedMap.has(normalizedInput)) {
             found = true;
             location = '看过';
-            matchedCode = watchedMatch;
-        } else if (wantedMatch) {
+            matchedCode = watchedMap.get(normalizedInput);
+        } else if (wantedMap.has(normalizedInput)) {
             found = true;
             location = '想看';
-            matchedCode = wantedMatch;
+            matchedCode = wantedMap.get(normalizedInput);
         }
 
-        // 查找候选匹配（不区分大小写和空格，支持前缀匹配）
-        if (!found && code.length >= 1) {
-            candidates = allCodes.filter(c =>
-                isCodeMatch(c, code) || isCodePrefixMatch(code, c)
-            ).slice(0, 5); // 最多显示5个候选
+        // 查找候选匹配（只在未精确匹配时执行）
+        if (!found && code.length >= 2) {
+            const allEntries = [...watchedMap.entries(), ...wantedMap.entries()];
+            candidates = allEntries
+                .filter(([normalized, original]) =>
+                    normalized.includes(normalizedInput) ||
+                    normalizedInput.includes(normalized)
+                )
+                .slice(0, 5)
+                .map(([_, original]) => original);
         }
 
         smartResult.style.display = 'block';
 
         if (found) {
-            smartResult.className = 'smart-result found';
-            const statusColor = location === '看过' ? '#ff453a' : '#ff9f0a';
-            smartResult.innerHTML = `
-                <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 6px;">
-                    <span style="background: ${statusColor}; color: white; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: bold;">${location}</span>
-                    <span style="font-weight: bold; font-size: 16px;">匹配成功</span>
-                </div>
-                <div style="opacity: 0.8; font-size: 14px; letter-spacing: 0.5px;">${matchedCode}</div>
-            `;
-
-            // 显示删除按钮
-            smartActions.style.display = 'flex';
-            smartActions.style.justifyContent = 'center';
-            smartActions.innerHTML = '';
-
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'smart-action-button delete active javdb-delete-btn';
-            deleteBtn.textContent = '删除';
-            deleteBtn.addEventListener('click', () => smartDeleteCode(matchedCode));
-            smartActions.appendChild(deleteBtn);
+            renderFoundResult(smartResult, smartActions, matchedCode, location);
         } else if (candidates.length > 0) {
-            smartResult.className = 'smart-result not-found';
-            let candidatesHtml = '<div style="font-weight: bold; margin-bottom: 5px;">候选番号:</div>';
-            candidates.forEach(candidate => {
-                const location = findMatchingCode(candidate, watchedCodes) ? '看过' : '想看';
-                candidatesHtml += `<div style="cursor: pointer; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.1);" data-candidate="${candidate}">${candidate} (${location})</div>`;
-            });
-            smartResult.innerHTML = candidatesHtml;
-
-            // 添加候选点击事件
-            smartResult.querySelectorAll('[data-candidate]').forEach(elem => {
-                elem.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const candidate = e.target.getAttribute('data-candidate');
-                    selectCandidate(candidate);
-                });
-            });
-
-            // 隐藏操作按钮，等待用户选择候选
-            smartActions.style.display = 'none';
+            renderCandidates(smartResult, smartActions, candidates, watchedMap);
         } else {
-            smartResult.className = 'smart-result not-found';
-            smartResult.innerHTML = `
-                <div style="font-weight: bold; margin-bottom: 5px;">未找到</div>
-                <div>番号: ${code}</div>
-                <div>可以添加到看过或想看列表</div>
-            `;
-
-            // 显示添加按钮
-            smartActions.style.display = 'flex';
-            smartActions.innerHTML = '';
-
-            const addWantedBtn = document.createElement('button');
-            addWantedBtn.className = 'smart-action-button add-wanted';
-            addWantedBtn.textContent = '添加到想看';
-            addWantedBtn.addEventListener('click', () => smartAddCode(code, 'wanted'));
-            smartActions.appendChild(addWantedBtn);
-
-            const addWatchedBtn = document.createElement('button');
-            addWatchedBtn.className = 'smart-action-button add-watched';
-            addWatchedBtn.textContent = '添加到看过';
-            addWatchedBtn.addEventListener('click', () => smartAddCode(code, 'watched'));
-            smartActions.appendChild(addWatchedBtn);
+            renderNotFound(smartResult, smartActions, code);
         }
+    }
+
+    // 渲染匹配成功结果
+    function renderFoundResult(smartResult, smartActions, matchedCode, location) {
+        smartResult.className = 'smart-result found';
+        const statusColor = location === '看过' ? '#ff453a' : '#ff9f0a';
+        smartResult.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 6px;">
+                <span style="background: ${statusColor}; color: white; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: bold;">${location}</span>
+                <span style="font-weight: bold; font-size: 16px;">匹配成功</span>
+            </div>
+            <div style="opacity: 0.8; font-size: 14px; letter-spacing: 0.5px;">${matchedCode}</div>
+        `;
+
+        smartActions.style.display = 'flex';
+        smartActions.style.justifyContent = 'center';
+        smartActions.innerHTML = '';
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'smart-action-button delete active javdb-delete-btn';
+        deleteBtn.textContent = '删除';
+        deleteBtn.addEventListener('click', () => smartDeleteCode(matchedCode));
+        smartActions.appendChild(deleteBtn);
+    }
+
+    // 渲染候选列表
+    function renderCandidates(smartResult, smartActions, candidates, watchedMap) {
+        smartResult.className = 'smart-result not-found';
+        let candidatesHtml = '<div style="font-weight: bold; margin-bottom: 5px;">候选番号:</div>';
+        candidates.forEach(candidate => {
+            const location = watchedMap.has(normalizeForMatch(candidate)) ? '看过' : '想看';
+            candidatesHtml += `<div style="cursor: pointer; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.1);" data-candidate="${candidate}">${candidate} (${location})</div>`;
+        });
+        smartResult.innerHTML = candidatesHtml;
+
+        smartResult.querySelectorAll('[data-candidate]').forEach(elem => {
+            elem.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const candidate = e.target.getAttribute('data-candidate');
+                selectCandidate(candidate);
+            });
+        });
+
+        smartActions.style.display = 'none';
+    }
+
+    // 渲染未找到结果
+    function renderNotFound(smartResult, smartActions, code) {
+        smartResult.className = 'smart-result not-found';
+        smartResult.innerHTML = `
+            <div style="font-weight: bold; margin-bottom: 5px;">未找到</div>
+            <div>番号: ${code}</div>
+            <div>可以添加到看过或想看列表</div>
+        `;
+
+        smartActions.style.display = 'flex';
+        smartActions.innerHTML = '';
+
+        const addWantedBtn = document.createElement('button');
+        addWantedBtn.className = 'smart-action-button add-wanted';
+        addWantedBtn.textContent = '添加到想看';
+        addWantedBtn.addEventListener('click', () => smartAddCode(code, 'wanted'));
+        smartActions.appendChild(addWantedBtn);
+
+        const addWatchedBtn = document.createElement('button');
+        addWatchedBtn.className = 'smart-action-button add-watched';
+        addWatchedBtn.textContent = '添加到看过';
+        addWatchedBtn.addEventListener('click', () => smartAddCode(code, 'watched'));
+        smartActions.appendChild(addWatchedBtn);
     }
 
     // 选择候选番号
@@ -2490,9 +2667,9 @@
         // 标准化番号
         const normalizedCode = normalizeCode(code);
 
-        // 获取当前列表
-        let codes = GM_getValue(storageKey, []);
-        let oppositeCodes = GM_getValue(oppositeKey, []);
+        // 获取当前列表（使用缓存）
+        let codes = getCachedValue(storageKey, []);
+        let oppositeCodes = getCachedValue(oppositeKey, []);
 
         // 检查是否已在列表中（不区分大小写和空格）
         if (findMatchingCode(normalizedCode, codes)) {
@@ -2504,7 +2681,7 @@
         if (findMatchingCode(normalizedCode, oppositeCodes)) {
             // 从对面列表中移除并排序
             oppositeCodes = oppositeCodes.filter(c => !isCodeMatch(c, normalizedCode)).sort();
-            GM_setValue(oppositeKey, oppositeCodes);
+            setCachedValue(oppositeKey, oppositeCodes);
             showMessage(`番号 ${normalizedCode} 已从${type === 'watched' ? '想看' : '看过'}列表移除，并添加到${type === 'watched' ? '看过' : '想看'}列表`, 'info');
         } else {
             showMessage(`番号 ${normalizedCode} 已添加到${type === 'watched' ? '看过' : '想看'}列表`, 'success');
@@ -2512,7 +2689,7 @@
 
         // 添加到新列表并排序
         codes.push(normalizedCode);
-        GM_setValue(storageKey, codes.sort());
+        setCachedValue(storageKey, codes.sort());
 
         // 更新显示
         updateGlobalCount();
@@ -2526,8 +2703,8 @@
 
     // 智能删除番号
     function smartDeleteCode(code) {
-        const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
-        const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
+        const watchedCodes = getCachedValue(CONFIG.watchedStorageKey, []);
+        const wantedCodes = getCachedValue(CONFIG.wantedStorageKey, []);
 
         let deleted = false;
         let deletedFrom = '';
@@ -2536,7 +2713,7 @@
         const watchedMatch = findMatchingCode(code, watchedCodes);
         if (watchedMatch) {
             const newWatchedCodes = watchedCodes.filter(c => !isCodeMatch(c, code)).sort();
-            GM_setValue(CONFIG.watchedStorageKey, newWatchedCodes);
+            setCachedValue(CONFIG.watchedStorageKey, newWatchedCodes);
             deleted = true;
             deletedFrom = '看过';
         }
@@ -2545,7 +2722,7 @@
         const wantedMatch = findMatchingCode(code, wantedCodes);
         if (wantedMatch) {
             const newWantedCodes = wantedCodes.filter(c => !isCodeMatch(c, code)).sort();
-            GM_setValue(CONFIG.wantedStorageKey, newWantedCodes);
+            setCachedValue(CONFIG.wantedStorageKey, newWantedCodes);
             deleted = true;
             deletedFrom += deletedFrom ? '和想看' : '想看';
         }
@@ -2632,8 +2809,8 @@
 
     // 导出数据到本地JSON文件
     function exportData() {
-        const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
-        const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
+        const watchedCodes = getCachedValue(CONFIG.watchedStorageKey, []);
+        const wantedCodes = getCachedValue(CONFIG.wantedStorageKey, []);
 
         // 按字母数字顺序排序
         const sortedWatched = [...watchedCodes].sort();
@@ -2757,8 +2934,8 @@
         `;
 
         // 获取当前数据统计
-        const currentWatched = GM_getValue(CONFIG.watchedStorageKey, []);
-        const currentWanted = GM_getValue(CONFIG.wantedStorageKey, []);
+        const currentWatched = getCachedValue(CONFIG.watchedStorageKey, []);
+        const currentWanted = getCachedValue(CONFIG.wantedStorageKey, []);
 
         // 标题
         const title = document.createElement('div');
@@ -2950,16 +3127,16 @@
 
         if (mode === 'overwrite') {
             // 覆盖模式：直接替换，看过优先
-            result.watched.before = GM_getValue(CONFIG.watchedStorageKey, []).length;
-            result.wanted.before = GM_getValue(CONFIG.wantedStorageKey, []).length;
+            result.watched.before = getCachedValue(CONFIG.watchedStorageKey, []).length;
+            result.wanted.before = getCachedValue(CONFIG.wantedStorageKey, []).length;
 
             // 看过优先：从想看中移除看过中已有的番号
             const watchedSet = new Set(importWatched);
             const finalWatched = [...new Set(importWatched)].sort();
             const finalWanted = importWanted.filter(code => !watchedSet.has(code)).sort();
 
-            GM_setValue(CONFIG.watchedStorageKey, finalWatched);
-            GM_setValue(CONFIG.wantedStorageKey, finalWanted);
+            setCachedValue(CONFIG.watchedStorageKey, finalWatched);
+            setCachedValue(CONFIG.wantedStorageKey, finalWanted);
 
             result.watched.after = finalWatched.length;
             result.wanted.after = finalWanted.length;
@@ -2968,8 +3145,8 @@
 
         } else {
             // 合并模式：合并、去重并排序
-            const currentWatched = GM_getValue(CONFIG.watchedStorageKey, []);
-            const currentWanted = GM_getValue(CONFIG.wantedStorageKey, []);
+            const currentWatched = getCachedValue(CONFIG.watchedStorageKey, []);
+            const currentWanted = getCachedValue(CONFIG.wantedStorageKey, []);
 
             result.watched.before = currentWatched.length;
             result.wanted.before = currentWanted.length;
@@ -2984,8 +3161,8 @@
             const watchedSet = new Set(mergedWatched);
             const finalWanted = mergedWanted.filter(code => !watchedSet.has(code)).sort();
 
-            GM_setValue(CONFIG.watchedStorageKey, mergedWatched);
-            GM_setValue(CONFIG.wantedStorageKey, finalWanted);
+            setCachedValue(CONFIG.watchedStorageKey, mergedWatched);
+            setCachedValue(CONFIG.wantedStorageKey, finalWanted);
 
             result.watched.after = mergedWatched.length;
             result.wanted.after = finalWanted.length;
@@ -3148,9 +3325,9 @@
         const storageKey = listType === 'watched' ? CONFIG.watchedStorageKey : CONFIG.wantedStorageKey;
         const oppositeKey = listType === 'watched' ? CONFIG.wantedStorageKey : CONFIG.watchedStorageKey;
 
-        // 获取现有列表
-        let currentList = GM_getValue(storageKey, []);
-        let oppositeList = GM_getValue(oppositeKey, []);
+        // 获取现有列表（使用缓存）
+        let currentList = getCachedValue(storageKey, []);
+        let oppositeList = getCachedValue(oppositeKey, []);
 
         // 检查状态
         const alreadyInCurrent = findMatchingCode(normalizedCode, currentList);
@@ -3167,7 +3344,7 @@
         // 强制二选一逻辑：如果存在于对面列表，必须移除（以最后一次存入为准）
         if (alreadyInOpposite) {
             oppositeList = oppositeList.filter(code => !isCodeMatch(code, normalizedCode)).sort();
-            GM_setValue(oppositeKey, oppositeList);
+            setCachedValue(oppositeKey, oppositeList);
             hasChanged = true;
             debugLog(`从对侧列表 (${listType === 'watched' ? '想看' : '看过'}) 移除冲突项: ${normalizedCode}`);
         }
@@ -3175,7 +3352,7 @@
         // 如果不在当前列表，则添加
         if (!alreadyInCurrent) {
             currentList.push(normalizedCode);
-            GM_setValue(storageKey, currentList.sort());
+            setCachedValue(storageKey, currentList.sort());
             hasChanged = true;
             debugLog(`添加到当前列表 (${listType}): ${normalizedCode}`);
         }
@@ -3203,15 +3380,15 @@
 
         debugLog(`尝试从所有列表中移除番号: ${normalizedCode}`);
 
-        const watchedCodes = GM_getValue(CONFIG.watchedStorageKey, []);
-        const wantedCodes = GM_getValue(CONFIG.wantedStorageKey, []);
+        const watchedCodes = getCachedValue(CONFIG.watchedStorageKey, []);
+        const wantedCodes = getCachedValue(CONFIG.wantedStorageKey, []);
 
         let hasChanged = false;
 
         // 从看过列表中移除
         const newWatchedCodes = watchedCodes.filter(code => !isCodeMatch(code, normalizedCode));
         if (newWatchedCodes.length !== watchedCodes.length) {
-            GM_setValue(CONFIG.watchedStorageKey, newWatchedCodes);
+            setCachedValue(CONFIG.watchedStorageKey, newWatchedCodes);
             hasChanged = true;
             debugLog(`从看过列表中移除: ${normalizedCode}`);
         }
@@ -3219,7 +3396,7 @@
         // 从想看列表中移除
         const newWantedCodes = wantedCodes.filter(code => !isCodeMatch(code, normalizedCode));
         if (newWantedCodes.length !== wantedCodes.length) {
-            GM_setValue(CONFIG.wantedStorageKey, newWantedCodes);
+            setCachedValue(CONFIG.wantedStorageKey, newWantedCodes);
             hasChanged = true;
             debugLog(`从想看列表中移除: ${normalizedCode}`);
         }
