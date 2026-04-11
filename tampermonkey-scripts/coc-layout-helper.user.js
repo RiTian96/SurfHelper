@@ -2,7 +2,7 @@
 // @name         COC阵型复制助手
 // @namespace    https://github.com/RiTian96/SurfHelper
 // @version      1.2.0
-// @description  [核心] 绕过付费/次数限制，后台无感提取阵型链接；[辅助] 鼠标悬停显示高清巨型大图(自适应尺寸，智能避让鼠标)；[资源] 左侧悬浮背包记录历史阵型，支持二维码扫码直连。
+// @description  [核心] 绕过付费/次数限制，后台无感提取阵型链接；[辅助] 鼠标悬停显示高清巨型大图(玻璃拟态UI/自适应/智能避让)；[资源] 左侧悬浮背包记录历史阵型，支持二维码扫码直连。
 // @author       RiTian96
 // @match        *://coc.6oh.cn/*
 // @icon         https://coc.6oh.cn/favicon.ico
