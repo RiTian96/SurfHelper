@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COC阵型复制助手
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.1.3
+// @version      1.2.0
 // @description  [核心] 绕过付费/次数限制，后台无感提取阵型链接；[辅助] 鼠标悬停显示高清巨型大图(自适应尺寸，智能避让鼠标)；[资源] 左侧悬浮背包记录历史阵型，支持二维码扫码直连。
 // @author       RiTian96
 // @match        *://coc.6oh.cn/*
@@ -27,7 +27,13 @@
         // 历史记录最大保存条数
         bagMaxItems: 50,
         // 是否开启调试日志
-        debug: false
+        debug: false,
+        // 动画时长配置
+        animation: {
+            fast: '150ms',
+            normal: '300ms',
+            slow: '500ms'
+        }
     };
 
     // 运行时状态管理
@@ -48,128 +54,336 @@
     function injectStyles() {
         GM_addStyle(`
             /* --- [核心] 屏蔽干扰 --- */
-            /* 隐藏 layui 的遮罩和弹窗 (付费/登录提示) */
             .layui-layer-shade, .layui-layer-dialog, .layui-layer-msg {
                 display: none !important; z-index: -9999 !important; pointer-events: none !important;
             }
 
             /* --- [视觉] 成功反馈 --- */
             .coc-cracked-card {
-                border: 3px solid #00E676 !important; /* 绿色高亮 */
-                box-shadow: 0 0 15px rgba(0, 230, 118, 0.4) !important;
+                border: 3px solid #00E676 !important;
+                box-shadow: 0 0 20px rgba(0, 230, 118, 0.5), 0 0 40px rgba(0, 230, 118, 0.2) !important;
                 transform: scale(1.01);
-                transition: all 0.3s ease;
+                transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
                 z-index: 5;
                 position: relative;
             }
 
-            /* --- [组件] 智能巨型透镜 (Magic Lens) - 自适应版 --- */
+            /* --- [组件] 智能巨型透镜 (Magic Lens) - 玻璃拟态版 --- */
             #coc-magic-lens {
                 position: fixed;
                 top: 50%;
-                /* left/right 由 JS 动态控制以避让鼠标 */
                 transform: translateY(-50%);
-
-                /* 自适应逻辑：取消固定宽高，改用最大限制 */
                 width: auto;
                 height: auto;
-                max-width: 48vw;  /* 限制宽度不超过屏幕一半 (留出鼠标空间) */
-                max-height: 90vh; /* 限制高度不超过屏幕90% */
-
-                background: rgba(0, 0, 0, 0.95);
-                border: 2px solid #555;
-                border-radius: 12px;
-                box-shadow: 0 30px 100px rgba(0,0,0,0.9); /* 强阴影提升层次感 */
-                z-index: 2147483647; /* 使用最高z-index确保在最上层 */
-
-                /* 布局居中，消除黑边关键 */
+                max-width: 48vw;
+                max-height: 90vh;
+                background: rgba(20, 20, 25, 0.75);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 20px;
+                box-shadow: 0 25px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05) inset;
+                z-index: 2147483647;
                 display: none;
                 flex-direction: column;
                 align-items: center;
                 justify-content: center;
-
-                pointer-events: none; /* 关键：鼠标穿透 */
-                backdrop-filter: blur(5px);
-                transition: opacity 0.2s;
-                will-change: opacity; /* 优化性能 */
+                pointer-events: none;
+                backdrop-filter: blur(24px) saturate(180%);
+                -webkit-backdrop-filter: blur(24px) saturate(180%);
+                transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+                will-change: opacity, transform;
+                padding: 12px;
             }
 
             #coc-magic-lens img {
                 display: block;
                 max-width: 100%;
-                max-height: 85vh; /* 确保图片完整显示，留出边距 */
+                max-height: 82vh;
                 object-fit: contain;
                 opacity: 0;
-                transition: opacity 0.3s ease;
-                user-select: none; /* 防止图片被选中 */
-                -webkit-user-drag: none; /* 防止拖拽 */
+                transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+                user-select: none;
+                -webkit-user-drag: none;
+                border-radius: 12px;
             }
 
-            /* 加载提示 */
             #coc-magic-lens::after {
                 content: "高清原图读取中...";
                 position: absolute;
-                color: #888; font-size: 12px; letter-spacing: 1px;
-                z-index: 1; /* 确保文字可见 */
+                color: rgba(255, 255, 255, 0.5);
+                font-size: 13px;
+                font-weight: 500;
+                letter-spacing: 0.5px;
+                z-index: 1;
                 pointer-events: none;
+                text-shadow: 0 2px 4px rgba(0,0,0,0.3);
             }
 
-            /* --- [组件] 侧边背包 (Loot Bag) --- */
+            /* --- [组件] 侧边背包 (Loot Bag) - 玻璃拟态版 --- */
             #coc-loot-bag {
-                position: fixed; top: 25%; left: 0;
-                width: 40px; height: auto;
-                background: rgba(20, 20, 20, 0.98);
-                border-radius: 0 10px 10px 0;
+                position: fixed;
+                top: 25%;
+                left: 0;
+                width: 44px;
+                height: auto;
+                background: rgba(30, 30, 35, 0.65);
+                border-radius: 0 16px 16px 0;
                 z-index: 100000;
-                border: 1px solid #444; border-left: none;
-                box-shadow: 2px 2px 10px rgba(0,0,0,0.5);
-                transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                overflow: hidden; cursor: pointer;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-left: none;
+                box-shadow: 4px 4px 20px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.03) inset;
+                backdrop-filter: blur(20px) saturate(160%);
+                -webkit-backdrop-filter: blur(20px) saturate(160%);
+                transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+                overflow: hidden;
+                cursor: pointer;
             }
-            #coc-loot-bag:hover { width: 260px; }
+
+            #coc-loot-bag:hover {
+                width: 280px;
+                background: rgba(35, 35, 42, 0.8);
+                box-shadow: 8px 8px 30px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05) inset;
+            }
 
             .bag-icon-area {
-                width: 40px; height: 50px;
-                display: flex; align-items: center; justify-content: center;
-                font-size: 20px; color: #bbb; background: rgba(255,255,255,0.05);
+                width: 44px;
+                height: 56px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 22px;
+                color: rgba(255, 255, 255, 0.7);
+                background: rgba(255,255,255,0.03);
+                transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+                text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            }
+
+            #coc-loot-bag:hover .bag-icon-area {
+                background: rgba(0, 230, 118, 0.15);
+                color: #00E676;
             }
 
             #coc-loot-list {
-                width: 260px; max-height: 400px; overflow-y: auto;
+                width: 280px;
+                max-height: 420px;
+                overflow-y: auto;
+                padding: 4px 0;
             }
-            #coc-loot-list::-webkit-scrollbar { width: 4px; }
-            #coc-loot-list::-webkit-scrollbar-thumb { background: #555; border-radius: 2px; }
+
+            #coc-loot-list::-webkit-scrollbar {
+                width: 5px;
+            }
+
+            #coc-loot-list::-webkit-scrollbar-track {
+                background: transparent;
+            }
+
+            #coc-loot-list::-webkit-scrollbar-thumb {
+                background: rgba(255, 255, 255, 0.15);
+                border-radius: 3px;
+            }
+
+            #coc-loot-list::-webkit-scrollbar-thumb:hover {
+                background: rgba(255, 255, 255, 0.25);
+            }
 
             .coc-loot-item {
-                font-size: 12px; color: #ccc; padding: 12px 15px;
-                border-bottom: 1px solid #333; transition: background 0.2s;
-                white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                font-size: 12px;
+                color: rgba(255, 255, 255, 0.85);
+                padding: 14px 18px;
+                margin: 0 8px;
+                border-radius: 10px;
+                border: 1px solid transparent;
+                transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                cursor: pointer;
             }
-            .coc-loot-item:hover { background: #333; color: #00E676; }
 
-            /* --- [组件] 结果弹窗 (Modal) --- */
+            .coc-loot-item:hover {
+                background: rgba(255, 255, 255, 0.08);
+                border-color: rgba(0, 230, 118, 0.3);
+                color: #00E676;
+                transform: translateX(4px);
+            }
+
+            .coc-loot-item:active {
+                transform: translateX(2px) scale(0.98);
+            }
+
+            .coc-loot-item:not(:last-child) {
+                margin-bottom: 4px;
+            }
+
+            /* --- [组件] 结果弹窗 (Modal) - 玻璃拟态版 --- */
             #coc-result-modal {
-                position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                background: rgba(25, 25, 25, 0.98); backdrop-filter: blur(10px);
-                color: #fff; padding: 25px; border-radius: 16px;
-                z-index: 2147483647; width: 340px; max-width: 90vw; text-align: center;
-                box-shadow: 0 25px 80px rgba(0,0,0,0.8); border: 1px solid #444;
-                animation: popUp 0.25s ease-out; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(28, 28, 32, 0.82);
+                backdrop-filter: blur(28px) saturate(180%);
+                -webkit-backdrop-filter: blur(28px) saturate(180%);
+                color: #fff;
+                padding: 28px;
+                border-radius: 24px;
+                z-index: 2147483647;
+                width: 360px;
+                max-width: 92vw;
+                text-align: center;
+                box-shadow: 0 32px 100px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.08) inset;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                animation: modalPopUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
                 will-change: transform, opacity;
             }
-            @keyframes popUp { 
-                from {transform:translate(-50%,-45%) scale(0.95);opacity:0;} 
-                to {transform:translate(-50%,-50%) scale(1);opacity:1;} 
+
+            @keyframes modalPopUp {
+                from { transform: translate(-50%, -45%) scale(0.92); opacity: 0; }
+                to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
             }
 
-            /* 链接文本域 (自动换行) */
+            @keyframes modalFadeOut {
+                from { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+                to { transform: translate(-50%, -48%) scale(0.96); opacity: 0; }
+            }
+
+            #coc-result-modal.closing {
+                animation: modalFadeOut 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            }
+
+            /* 链接文本域 */
             .coc-link-textarea {
-                width: 100%; height: 70px;
-                background: #111; border: 1px solid #444; color: #00E676;
-                font-size: 12px; font-family: Consolas, monospace;
-                padding: 8px; margin: 10px 0; border-radius: 6px;
-                resize: none; outline: none; word-break: break-all; white-space: pre-wrap;
-                box-sizing: border-box; text-align: left;
+                width: 100%;
+                height: 76px;
+                background: rgba(0, 0, 0, 0.35);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: #00E676;
+                font-size: 12px;
+                font-family: 'JetBrains Mono', Consolas, monospace;
+                padding: 12px;
+                margin: 14px 0;
+                border-radius: 12px;
+                resize: none;
+                outline: none;
+                word-break: break-all;
+                white-space: pre-wrap;
+                box-sizing: border-box;
+                text-align: left;
+                transition: all 0.2s ease;
+            }
+
+            .coc-link-textarea:focus {
+                border-color: rgba(0, 230, 118, 0.4);
+                background: rgba(0, 0, 0, 0.45);
+                box-shadow: 0 0 0 3px rgba(0, 230, 118, 0.1);
+            }
+
+            /* 玻璃拟态按钮 */
+            .coc-glass-btn {
+                flex: 1;
+                padding: 12px 16px;
+                border: none;
+                border-radius: 12px;
+                cursor: pointer;
+                font-weight: 600;
+                font-size: 13px;
+                letter-spacing: 0.3px;
+                transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                position: relative;
+                overflow: hidden;
+            }
+
+            .coc-glass-btn::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 50%);
+                opacity: 0;
+                transition: opacity 0.2s ease;
+            }
+
+            .coc-glass-btn:hover::before {
+                opacity: 1;
+            }
+
+            .coc-glass-btn:hover {
+                transform: translateY(-2px);
+                filter: brightness(1.15);
+            }
+
+            .coc-glass-btn:active {
+                transform: translateY(0) scale(0.97);
+                filter: brightness(0.95);
+            }
+
+            .coc-btn-primary {
+                background: linear-gradient(135deg, #2196F3, #1976D2);
+                color: white;
+                box-shadow: 0 4px 15px rgba(33, 150, 243, 0.35);
+            }
+
+            .coc-btn-primary:hover {
+                box-shadow: 0 6px 20px rgba(33, 150, 243, 0.45);
+            }
+
+            .coc-btn-secondary {
+                background: rgba(255, 255, 255, 0.1);
+                color: rgba(255, 255, 255, 0.9);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+
+            .coc-btn-secondary:hover {
+                background: rgba(255, 255, 255, 0.15);
+                border-color: rgba(255, 255, 255, 0.2);
+            }
+
+            /* 弹窗标题 */
+            .coc-modal-title {
+                margin: 0 0 18px 0;
+                color: #00E676;
+                font-size: 20px;
+                font-weight: 700;
+                letter-spacing: 0.5px;
+                text-shadow: 0 2px 10px rgba(0, 230, 118, 0.3);
+            }
+
+            /* 二维码容器 */
+            .coc-qr-container {
+                background: white;
+                padding: 8px;
+                width: 150px;
+                height: 150px;
+                margin: 0 auto 18px auto;
+                border-radius: 14px;
+                box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+                transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+
+            .coc-qr-container:hover {
+                transform: scale(1.03);
+            }
+
+            .coc-qr-container img {
+                width: 100%;
+                height: 100%;
+                display: block;
+                border-radius: 8px;
+            }
+
+            /* 提示文字 */
+            .coc-hint-text {
+                font-size: 12px;
+                color: rgba(255, 255, 255, 0.5);
+                margin-bottom: 6px;
+                letter-spacing: 0.3px;
             }
         `);
     }
@@ -194,8 +408,10 @@
             <div style="display:flex; flex-direction: column;">
                 <div class="bag-icon-area" title="历史记录">🎒</div>
                 <div id="coc-loot-list">
-                    <div style="color:#666; text-align:center; padding:20px 10px; font-size:12px;">
-                        暂无记录<br>复制后自动加入
+                    <div style="color:rgba(255,255,255,0.35); text-align:center; padding:40px 20px; font-size:13px; line-height:1.6;">
+                        <div style="font-size:32px; margin-bottom:12px; opacity:0.5;">🎒</div>
+                        <div>暂无历史记录</div>
+                        <div style="font-size:11px; margin-top:4px;">复制阵型后将自动加入</div>
                     </div>
                 </div>
             </div>`;
@@ -385,58 +601,102 @@
     function renderBag() {
         const list = document.getElementById('coc-loot-list');
         if (!list) return;
-        
+
         list.innerHTML = '';
-        State.historyLog.forEach(item => {
+
+        if (State.historyLog.length === 0) {
+            // 空状态
+            list.innerHTML = `
+                <div style="color:rgba(255,255,255,0.35); text-align:center; padding:40px 20px; font-size:13px; line-height:1.6;">
+                    <div style="font-size:32px; margin-bottom:12px; opacity:0.5;">🎒</div>
+                    <div>暂无历史记录</div>
+                    <div style="font-size:11px; margin-top:4px;">复制阵型后将自动加入</div>
+                </div>
+            `;
+            return;
+        }
+
+        State.historyLog.forEach((item, index) => {
             const row = document.createElement('div');
             row.className = 'coc-loot-item';
+            row.style.animationDelay = `${index * 0.03}s`;
+
             // 提取ID简写
             const idMatch = item.link.match(/id=([^&]+)/);
-            const shortId = idMatch ? idMatch[1].substring(0, 6) : 'Link';
+            const shortId = idMatch ? idMatch[1].substring(0, 8) : 'Link';
+
+            // 截断标题
+            const title = (item.title || '阵型分享').substring(0, 18);
+
             row.innerHTML = `
-                <div style="font-weight:bold;">${item.title || '阵型分享'}</div>
-                <div style="color:#00E676; font-size:10px; margin-top:2px;">ID: ${shortId}...</div>
+                <div style="font-weight:600; font-size:12px; margin-bottom:3px;">${title}</div>
+                <div style="color:#00E676; font-size:10px; opacity:0.8; font-family:'JetBrains Mono', monospace;">ID: ${shortId}...</div>
             `;
-            row.onclick = () => { 
+
+            row.onclick = () => {
                 if (item.link) {
-                    showModal(item.link); 
+                    showModal(item.link);
                     try { GM_setClipboard(item.link); } catch(e) { log("🔥 复制失败:", e); }
                 }
             };
+
             list.appendChild(row);
         });
     }
 
     function showModal(link) {
         const old = document.getElementById('coc-result-modal');
-        if (old) old.remove();
+        if (old) {
+            old.classList.add('closing');
+            setTimeout(() => old.remove(), 200);
+        }
 
         const div = document.createElement('div');
         div.id = 'coc-result-modal';
         const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=10&data=${encodeURIComponent(link)}`;
 
         div.innerHTML = `
-            <h3 style="margin:0 0 15px 0; color:#00E676; font-size: 18px;">🎉 提取成功</h3>
-            <div style="background:white; padding:5px; width:140px; height:140px; margin:0 auto 15px auto; border-radius:8px;" title="手机扫码">
-                <img src="${qrUrl}" style="width:100%; height:100%; display:block;">
+            <h3 class="coc-modal-title">🎉 提取成功</h3>
+            <div class="coc-qr-container" title="手机扫码">
+                <img src="${qrUrl}">
             </div>
-            <p style="font-size:12px; color:#aaa; margin-bottom:5px;">链接已自动复制：</p>
+            <p class="coc-hint-text">链接已自动复制到剪贴板</p>
             <textarea id="coc-result-link" class="coc-link-textarea" readonly>${link}</textarea>
-            <div style="display:flex; gap:10px; margin-top: 10px;">
-                <button id="coc-btn-go" style="flex:1; padding:8px; background:#2196F3; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">🚀 启动游戏</button>
-                <button id="coc-btn-cls" style="flex:1; padding:8px; background:#444; color:white; border:none; border-radius:4px; cursor:pointer;">关闭 (Esc)</button>
+            <div style="display:flex; gap:12px; margin-top: 14px;">
+                <button id="coc-btn-go" class="coc-glass-btn coc-btn-primary">🚀 启动游戏</button>
+                <button id="coc-btn-cls" class="coc-glass-btn coc-btn-secondary">关闭 (Esc)</button>
             </div>
         `;
         document.body.appendChild(div);
 
-        setTimeout(() => document.getElementById('coc-result-link').select(), 100);
+        // 自动选中文本
+        setTimeout(() => {
+            const textarea = document.getElementById('coc-result-link');
+            if (textarea) textarea.select();
+        }, 100);
 
-        const close = () => div.remove();
+        // 关闭动画
+        const close = () => {
+            div.classList.add('closing');
+            setTimeout(() => div.remove(), 200);
+        };
+
         document.getElementById('coc-btn-cls').onclick = close;
         document.getElementById('coc-btn-go').onclick = () => window.location.href = link;
 
-        const keyHandler = (e) => { if(e.key==='Escape'){ close(); document.removeEventListener('keydown',keyHandler); }};
+        // ESC 关闭
+        const keyHandler = (e) => {
+            if (e.key === 'Escape') {
+                close();
+                document.removeEventListener('keydown', keyHandler);
+            }
+        };
         document.addEventListener('keydown', keyHandler);
+
+        // 点击遮罩关闭（可选）
+        div.addEventListener('click', (e) => {
+            if (e.target === div) close();
+        });
     }
 
 
