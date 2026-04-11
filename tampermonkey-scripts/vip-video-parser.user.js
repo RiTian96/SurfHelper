@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         VIP视频解析器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.6.2
-// @description  [核心] 多平台VIP视频解析，支持腾讯/爱奇艺/优酷/B站/芒果TV，自动切换可用接口；[辅助] 接口评分排序、一键切换下一接口；[UI] 玻璃拟态风格
+// @version      1.6.6
+// @description  [核心] 腾讯/爱奇艺/优酷/B站/芒果TV多平台VIP解析，15个接口自动切换；[优化] fixed定位注入、换集检测、静音隐藏、接口评分
 // @author       RiTian96
 // @match        *://v.qq.com/*
 // @match        *://*.iqiyi.com/*
@@ -41,50 +41,58 @@
         };
     }
 
-    // 解析接口列表
+    // 解析接口列表（用户指定的6个接口默认排在前面）
     const apiList = [
-        {value: "https://jx.playerjy.com/?url=", label: "Player-JY"},
-        {value: "https://jiexi.789jiexi.icu:4433/?url=", label: "789解析"},
-        {value: "https://jx.2s0.cn/player/?url=", label: "极速解析"},
-        {value: "https://bd.jx.cn/?url=", label: "冰豆解析"},
-        {value: "https://jx.973973.xyz/?url=", label: "973解析"},
+        // 用户指定的优先接口
         {value: "https://jx.xmflv.com/?url=", label: "虾米视频解析"},
         {value: "https://jx.hls.one/?url=", label: "HLS解析"},
-        {value: "https://www.ckplayer.vip/jiexi/?url=", label: "CK"},
+        {value: "https://bd.jx.cn/?url=", label: "冰豆解析"},
+        {value: "https://jx.77flv.cc/?url=", label: "七七云解析"},
+        {value: "https://jx.2s0.cn/player/?url=", label: "极速解析"},
         {value: "https://jx.nnxv.cn/tv.php?url=", label: "七哥解析"},
+        // 其他接口
+        {value: "https://jx.playerjy.com/?url=", label: "Player-JY"},
+        {value: "https://jiexi.789jiexi.icu:4433/?url=", label: "789解析"},
+        {value: "https://jx.973973.xyz/?url=", label: "973解析"},
+        {value: "https://www.ckplayer.vip/jiexi/?url=", label: "CK"},
         {value: "https://www.yemu.xyz/?url=", label: "夜幕"},
         {value: "https://www.pangujiexi.com/jiexi/?url=", label: "盘古"},
         {value: "https://www.playm3u8.cn/jiexi.php?url=", label: "playm3u8"},
-        {value: "https://jx.77flv.cc/?url=", label: "七七云解析"},
         {value: "https://video.isyour.love/player/getplayer?url=", label: "芒果TV1"},
         {value: "https://im1907.top/?jx=", label: "芒果TV2"}
     ];
 
-    // 播放器容器选择器（按优先级排序）
+    // 播放器容器选择器：按平台优先级排序
     const playerContainerSelectors = [
-        // 爱奇艺
-        '.iqp-player',
-        '.player-controls-wrap',
-        // 腾讯视频
-        '.txp_player_video_wrap',
+        // 腾讯视频 - 最高优先级选择器
+        '#mod_player',
+        '.txp_player',
         '.txp_video_container',
-        // B站
-        '#bilibili-player',
-        '.bpx-player-container',
-        '.bpx-player-wrap',
-        // 芒果TV
-        '.mango-layer',
+        '.txp_player_video_wrap',
+        // 芒果TV - 第二优先级
+        '#m-player-video-container',
+        '.mgtv-video-container',
+        '.mgtv-player-container',
+        '.mgtv-player-wrap',
         '#mgtv-player',
         '.mgtv-player',
-        // 优酷
-        '#player-wrapper',
-        '.yk-player',
-        // 通用
+        '.mango-layer',
+        '.mgtv-player-layers-container',
+        '.mgtv-player-video-area',
+        '.mgtv-player-video-box',
+        '.mgtv-player-video-content',
+        // 爱奇艺
+        '.iqp-player',
         '#flashbox',
+        // B站
+        '#bilibili-player',
         '.player-wrap',
         '#player-container',
         '#player',
-        '.player-view'
+        '.player-container',
+        '.player-view',
+        '.video-wrapper',
+        'video'
     ];
 
     // 备用播放器容器（当主容器找不到时使用，需尺寸检测）
@@ -151,6 +159,97 @@
         '[class*="ControlBar"]'
     ];
 
+    // 停止所有原生视频播放：静音、暂停、隐藏、禁用交互
+    function pauseAllNativeVideos() {
+        // 暂停并隐藏所有 video 元素
+        document.querySelectorAll('video').forEach(video => {
+            try {
+                video.muted = true;
+                if (!video.paused) video.pause();
+                video.style.opacity = '0';
+                video.style.pointerEvents = 'none';
+            } catch (e) {
+                // 忽略错误
+            }
+        });
+
+        // 针对各平台特殊处理
+        const host = window.location.hostname;
+
+        // 腾讯视频的 txp-player - 强力暂停+隐藏
+        if (host.includes('qq.com')) {
+            // 1. 暂停并隐藏 txp-player 内的视频
+            document.querySelectorAll('.txp-player video, .txp_video_container video, [class*="txp_"] video').forEach(v => {
+                try {
+                    v.muted = true;
+                    if (!v.paused) v.pause();
+                    v.style.opacity = '0';
+                } catch(e) {}
+            });
+            // 2. 尝试调用腾讯播放器API暂停
+            try {
+                if (window.tvp && window.tvp.player) {
+                    window.tvp.player.pause && window.tvp.player.pause();
+                }
+                // 尝试查找txp实例并暂停
+                const txpPlayer = document.querySelector('.txp-player');
+                if (txpPlayer) {
+                    // 发送暂停事件
+                    const pauseEvent = new Event('txp_pause', { bubbles: true });
+                    txpPlayer.dispatchEvent(pauseEvent);
+                }
+            } catch(e) {}
+        }
+
+        // 爱奇艺的 iqp-player - 隐藏策略
+        if (host.includes('iqiyi.com')) {
+            document.querySelectorAll('.iqp-player video, .iqp-player-wrap video, [data-player-hook] video').forEach(v => {
+                try {
+                    v.muted = true;
+                    if (!v.paused) v.pause();
+                    v.style.opacity = '0';
+                    v.style.pointerEvents = 'none';
+                } catch(e) {}
+            });
+        }
+
+        // 优酷的 youku-player - 隐藏策略
+        if (host.includes('youku.com')) {
+            document.querySelectorAll('.youku-player video, #player-wrapper video, .yk-player video').forEach(v => {
+                try {
+                    v.muted = true;
+                    if (!v.paused) v.pause();
+                    v.style.opacity = '0';
+                    v.style.pointerEvents = 'none';
+                } catch(e) {}
+            });
+        }
+
+        // 芒果TV的 mgtv-player - 隐藏策略
+        if (host.includes('mgtv.com')) {
+            document.querySelectorAll('.mgtv-player video, .mgtv-player-container video, #mgtv-player video').forEach(v => {
+                try {
+                    v.muted = true;
+                    if (!v.paused) v.pause();
+                    v.style.opacity = '0';
+                    v.style.pointerEvents = 'none';
+                } catch(e) {}
+            });
+        }
+
+        // B站的 bilibili-player - 隐藏策略
+        if (host.includes('bilibili.com')) {
+            document.querySelectorAll('.bilibili-player video, .bpx-player video, .bilibili-player-video video, #bilibili-player video').forEach(v => {
+                try {
+                    v.muted = true;
+                    if (!v.paused) v.pause();
+                    v.style.opacity = '0';
+                    v.style.pointerEvents = 'none';
+                } catch(e) {}
+            });
+        }
+    }
+
     // 本地存储键名
     const STORAGE_KEYS = {
         AUTO_PARSE: 'void_auto_parse',
@@ -174,8 +273,22 @@
 
     // 创建UI（异步）
     async function createUI() {
-        // 添加样式
-        const style = document.createElement('style');
+        // 1. 添加 base 标签确保页面内链接在当前窗口打开
+        if (document.head && !document.head.querySelector('base[target="_self"]')) {
+            const base = document.createElement('base');
+            base.target = '_self';
+            document.head.prepend(base);
+            console.log('[VIP解析器] 已添加 <base target="_self">');
+        }
+
+        // 2. 使用可复用的 style 标签批量注入 CSS
+        const STYLE_ID = 'vip-parser-styles';
+        let style = document.getElementById(STYLE_ID);
+        if (!style) {
+            style = document.createElement('style');
+            style.id = STYLE_ID;
+            document.head.prepend(style);
+        }
         style.textContent = `
             .video-parser-panel {
                 position: fixed;
@@ -829,9 +942,7 @@
         showStatus(`已切换到: ${apiList[currentApiIndex].label}`, 'success');
 
         // 停止所有原生视频播放
-        document.querySelectorAll('video').forEach(video => {
-            if (!video.paused) video.pause();
-        });
+        pauseAllNativeVideos();
 
         // 自动开始解析新接口
         setTimeout(() => {
@@ -964,23 +1075,51 @@
 
     // 清除解析
     function clearParse() {
+        // 停止守护进程
         if (guardianInterval) {
             clearInterval(guardianInterval);
             guardianInterval = null;
+            console.log('[VIP解析器] 守护进程已停止');
         }
 
-        // 移除之前的iframe
+        // 重置守护开始时间
+        guardianStartTime = 0;
+
+        // 移除iframe
         const oldIframe = document.getElementById('void-player-iframe');
         if (oldIframe) {
             oldIframe.remove();
+            console.log('[VIP解析器] iframe已移除');
         }
 
         // 恢复被隐藏的元素
-        document.querySelectorAll(nuisanceSelectors.join(',')).forEach(el => {
+        const allNuisanceSelectors = [
+            '#playerPopup', '#vipCoversBox', 'div.iqp-player-vipmask',
+            'div.iqp-player-paymask', 'div.iqp-player-loginmask',
+            'div[class^=qy-header-login-pop]', '.covers_cloudCover__ILy8R',
+            '#videoContent > div.loading_loading__vzq4j', '.iqp-player-guide',
+            'div.m-iqyGuide-layer', '.loading_loading__vzq4j',
+            '[class*="XPlayer_defaultCover__"]', '.iqp-controller',
+            '.plugin_ctrl_txp_bottom', '.txp_progress_bar_container', '.txp_progress_list', '.txp_progress',
+            '.plugin_ctrl_txp_shadow', '.plugin_ctrl_txp_gradient_bottom',
+            '.txp_full_screen_pause-active', '.txp_full_screen_pause-active-mask', '.txp_full_screen_pause-active-player',
+            '.txp_center_controls', '.txp-layer-above-control', '.txp-layer-dynamic-above-control--on',
+            '.txp_btn_play', '.txp_btn', '.txp_popup-active', '.txp_popup_content', '.mod_player_vip_ads',
+            '.playlist-overlay-minipay',
+            '.browser-ver-tip', '.videopcg-browser-tips', '.qy-player-browser-tip', '.iqp-browser-tip',
+            '.m-pc-down', '.m-pc-client', '.qy-dialog-container', '.iqp-client-guide', '.qy-dialog-wrap',
+            '[class*="shapedPopup_container"]', '[class*="notSupportedDrm_drmTipsPopBox"]',
+            '[class*="floatPage_floatPage"]', '#tvgCashierPage', '[class*="popwin_fullCover"]'
+        ];
+        document.querySelectorAll(allNuisanceSelectors.join(',')).forEach(el => {
             el.style.display = '';
+            el.style.zIndex = '';
         });
-        document.querySelectorAll(nativeVideoSelectors.join(',')).forEach(el => {
-            el.style.display = '';
+
+        // 恢复视频元素显示
+        document.querySelectorAll('video').forEach(el => {
+            el.style.opacity = '';
+            el.style.pointerEvents = '';
         });
 
         // 清除加载状态
@@ -988,125 +1127,205 @@
         isParsing = false;
     }
 
-    // 注入播放器
+    // 全局变量存储当前解析URL
+    let currentParseUrl = '';
+
+    // 注入播放器：使用 fixed 定位 iframe 覆盖原生播放器
     async function injectPlayer(parseUrl) {
-        // 查找播放器容器
-        let playerContainer = null;
-        for (const selector of playerContainerSelectors) {
-            playerContainer = document.querySelector(selector);
-            if (playerContainer) break;
+        // 保存当前解析URL
+        currentParseUrl = parseUrl;
+
+        // 先停止原网页所有视频播放
+        pauseAllNativeVideos();
+
+        // 显式清理旧的播放器（确保点击"解析"有动作）
+        const oldIframe = document.getElementById('void-player-iframe');
+        if (oldIframe) {
+            oldIframe.remove();
+            console.log('[VIP解析器] 清理旧iframe以允许重新解析');
         }
 
-        if (!playerContainer) {
-            // 使用备用容器列表（带尺寸检测）
-            for (const selector of fallbackContainerSelectors) {
-                playerContainer = document.querySelector(selector);
-                if (playerContainer && playerContainer.offsetWidth > 300 && playerContainer.offsetHeight > 200) {
-                    console.log(`使用备用容器: ${selector}`);
-                    break;
-                }
-            }
-        }
-
-        // 最后的兜底：查找任何足够大的 div
-        if (!playerContainer) {
-            const allDivs = document.querySelectorAll('div');
-            for (const div of allDivs) {
-                const rect = div.getBoundingClientRect();
-                if (rect.width > 400 && rect.height > 300) {
-                    playerContainer = div;
-                    console.log(`使用动态检测容器: <div> ${rect.width}x${rect.height}`);
-                    break;
-                }
-            }
-        }
-
-        if (!playerContainer) {
-            throw new Error('未找到播放器容器，可能是不支持的视频页面');
-        }
-
-        // 移除之前的iframe
-        const existingIframe = document.getElementById('void-player-iframe');
-        if (existingIframe) {
-            existingIframe.remove();
-        }
-
-        // 创建iframe
-        const iframe = document.createElement('iframe');
-        iframe.id = 'void-player-iframe';
-        iframe.src = parseUrl;
-        iframe.className = 'void-player-iframe';
-        iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
-        iframe.allowFullscreen = true;
-
-        // 添加错误处理
-        iframe.onerror = () => {
-            console.error('iframe加载失败');
-            showStatus('解析接口加载失败，请尝试其他接口', 'error', { persistent: true });
-            isParsing = false;
-            const button = document.getElementById('parser-button');
-            if (button) {
-                button.disabled = false;
-                button.textContent = '开始解析';
-            }
-        };
-
-        // 添加到容器
-        playerContainer.appendChild(iframe);
-
-        // 启动守护进程
-        startGuardian();
+        // 启动守护进程：50ms 高频轮询确保稳定注入
+        startGuardian(parseUrl);
     }
 
-    // 守护进程 - 持续隐藏广告和原生播放器（自适应轮询）
-    function startGuardian() {
-        let pollCount = 0;
-        const FAST_INTERVAL = 50;   // 前5秒用50ms高频探测
-        const SLOW_INTERVAL = 250; // 之后用250ms
-        const FAST_DURATION = 100;  // 100 * 50ms = 5秒
+    // 守护进程开始时间
+    let guardianStartTime = 0;
 
+    // 守护进程：持续监控并维护解析播放器状态
+    function startGuardian(url) {
+        // 清理旧的守护进程
         if (guardianInterval) {
             clearInterval(guardianInterval);
+            console.log('[VIP解析器] 清理旧守护进程');
         }
 
+        const iframeId = 'void-player-iframe';
+        const iframeSrc = url;
+        guardianStartTime = Date.now();
+        const host = window.location.hostname;
+
+        // 使用 50ms 高频轮询快速稳定注入
         guardianInterval = setInterval(() => {
-            pollCount++;
+            const elapsed = Date.now() - guardianStartTime;
 
-            // 隐藏广告元素
-            document.querySelectorAll(nuisanceSelectors.join(',')).forEach(el => {
-                if (el.style.display !== 'none') el.style.display = 'none';
+            // 1. 静音并隐藏原生视频（核心策略）
+            document.querySelectorAll('video').forEach(el => {
+                try {
+                    el.muted = true;
+                    if (!el.paused) el.pause();
+                    el.style.opacity = '0';
+                    el.style.pointerEvents = 'none';
+                } catch (e) { }
             });
 
-            // 隐藏原生视频并停止播放
-            document.querySelectorAll(nativeVideoSelectors.join(',')).forEach(el => {
-                if (el.style.display !== 'none') el.style.display = 'none';
-                if (el.tagName === 'VIDEO' && !el.paused) el.pause();
+            // 2. 清理干扰元素
+            const allNuisanceSelectors = [
+                '#playerPopup', '#vipCoversBox', 'div.iqp-player-vipmask',
+                'div.iqp-player-paymask', 'div.iqp-player-loginmask',
+                'div[class^=qy-header-login-pop]', '.covers_cloudCover__ILy8R',
+                '#videoContent > div.loading_loading__vzq4j', '.iqp-player-guide',
+                'div.m-iqyGuide-layer', '.loading_loading__vzq4j',
+                '[class*="XPlayer_defaultCover__"]', '.iqp-controller',
+                // 腾讯视频专用
+                '.plugin_ctrl_txp_bottom', '.txp_progress_bar_container', '.txp_progress_list', '.txp_progress',
+                '.plugin_ctrl_txp_shadow', '.plugin_ctrl_txp_gradient_bottom',
+                '.txp_full_screen_pause-active', '.txp_full_screen_pause-active-mask', '.txp_full_screen_pause-active-player',
+                '.txp_center_controls', '.txp-layer-above-control', '.txp-layer-dynamic-above-control--on',
+                '.txp_btn_play', '.txp_btn', '.txp_popup-active', '.txp_popup_content', '.mod_player_vip_ads',
+                '.playlist-overlay-minipay',
+                // 通用弹窗
+                '.browser-ver-tip', '.videopcg-browser-tips', '.qy-player-browser-tip', '.iqp-browser-tip',
+                '.m-pc-down', '.m-pc-client', '.qy-dialog-container', '.iqp-client-guide', '.qy-dialog-wrap',
+                '[class*="shapedPopup_container"]', '[class*="notSupportedDrm_drmTipsPopBox"]',
+                '[class*="floatPage_floatPage"]', '#tvgCashierPage', '[class*="popwin_fullCover"]'
+            ];
+            document.querySelectorAll(allNuisanceSelectors.join(',')).forEach(el => {
+                el.style.display = 'none';
+                el.style.zIndex = '-9999';
             });
 
-            // 额外确保所有视频元素都停止播放
-            document.querySelectorAll('video').forEach(video => {
-                if (!video.paused) video.pause();
-            });
+            // 3. 寻找注入目标容器
+            let targetRef = document.querySelector('#mod_player') ||
+                document.querySelector('.txp_player') ||
+                document.querySelector('.txp_video_container');
 
-            // 确保只显示一个面板
-            const allPanels = document.querySelectorAll('.video-parser-panel');
-            if (allPanels.length > 1) {
-                for (let i = 1; i < allPanels.length; i++) {
-                    allPanels[i].style.display = 'none';
+            if (!targetRef) {
+                // 备选选择器列表
+                const searchList = [
+                    '#m-player-video-container', '.mgtv-video-container', '.mgtv-player-container', '.mgtv-player-wrap', '#mgtv-player', '.mgtv-player', '.mango-layer', '.mgtv-player-ad',
+                    '.mgtv-player-layers-container', '.mgtv-player-video-area', '.mgtv-player-video-box', '.mgtv-player-video-content',
+                    '.iqp-player', '#flashbox', '.txp_player_video_wrap', '#bilibili-player', '.player-wrap', '#player-container', '#player', '.player-container', '.player-view', '.video-wrapper', 'video'
+                ];
+                for (let s of searchList) {
+                    const el = document.querySelector(s);
+                    // 元素宽度大于 10px 即视为有效容器
+                    if (el && el.getBoundingClientRect().width > 10) {
+                        targetRef = el;
+                        break;
+                    }
                 }
             }
 
-            // 5秒后降频
-            if (pollCount >= FAST_DURATION) {
-                clearInterval(guardianInterval);
-                guardianInterval = setInterval(arguments.callee, SLOW_INTERVAL);
+            // 4. 注入iframe（核心逻辑）
+            if (targetRef) {
+                const isMango = host.includes('mgtv.com');
+                const isTencent = host.includes('qq.com');
+                const rect = targetRef.getBoundingClientRect();
+
+                // 使用 fixed 定位策略，容器尺寸需大于 50x50
+                if (rect.width > 50 && rect.height > 50) {
+                    let iframe = document.getElementById(iframeId);
+                    // 如果iframe不存在或src不同，创建新的
+                    if (!iframe || iframe.getAttribute('data-src') !== iframeSrc) {
+                        if (iframe) iframe.remove();
+                        iframe = document.createElement('iframe');
+                        iframe.id = iframeId;
+                        iframe.src = iframeSrc;
+                        iframe.setAttribute('data-src', iframeSrc);
+                        iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+                        iframe.allowFullscreen = true;
+                        document.body.appendChild(iframe);
+                    }
+
+                    // 设置 fixed 定位样式覆盖播放器区域
+                    Object.assign(iframe.style, {
+                        position: 'fixed',
+                        top: rect.top + 'px',
+                        left: rect.left + 'px',
+                        width: rect.width + 'px',
+                        height: rect.height + 'px',
+                        border: 'none',
+                        zIndex: '2147483647',
+                        background: '#000'
+                    });
+
+                    // 5 秒后降低轮询频率至 250ms
+                    if (elapsed > 5000) {
+                        clearInterval(guardianInterval);
+                        guardianInterval = setInterval(() => startGuardian(url), 250);
+                    }
+                }
             }
-        }, FAST_INTERVAL);
+        }, 50); // 50ms 超高频轮询
     }
 
-    // 监听URL变化（针对SPA应用）- 使用 History API + 防抖
+    // 监听URL变化（针对SPA应用）- 使用 History API + 防抖 + 主动点击检测
     function setupHistoryListeners() {
         let lastUrl = window.location.href;
+
+        // 监听点击事件检测剧集切换
+        document.addEventListener('click', (event) => {
+            const anchor = event.target.closest('a');
+            if (!anchor || !anchor.href) return;
+
+            const href = anchor.href;
+            const host = window.location.hostname;
+
+            // 爱奇艺换集检测
+            if (host.includes('iqiyi.com') && href.includes('iqiyi.com/v_')) {
+                console.log('[VIP解析器] 检测到爱奇艺剧集点击:', href);
+                if (autoParseEnabled && shouldAutoParse()) {
+                    setTimeout(() => {
+                        clearParse();
+                        startAutoParse();
+                    }, 1000);
+                }
+            }
+
+            // 腾讯视频换集检测
+            if (host.includes('qq.com') && href.includes('v.qq.com/x/cover/')) {
+                console.log('[VIP解析器] 检测到腾讯视频剧集点击:', href);
+                if (autoParseEnabled && shouldAutoParse()) {
+                    setTimeout(() => {
+                        clearParse();
+                        startAutoParse();
+                    }, 1000);
+                }
+            }
+
+            // 芒果TV换集检测
+            if (host.includes('mgtv.com') && href.includes('mgtv.com/b/')) {
+                console.log('[VIP解析器] 检测到芒果TV剧集点击:', href);
+                if (autoParseEnabled && shouldAutoParse()) {
+                    setTimeout(() => {
+                        clearParse();
+                        startAutoParse();
+                    }, 1000);
+                }
+            }
+
+            // B站番剧换集检测
+            if (host.includes('bilibili.com') && href.includes('bilibili.com/bangumi/play/')) {
+                console.log('[VIP解析器] 检测到B站番剧点击:', href);
+                if (autoParseEnabled && shouldAutoParse()) {
+                    setTimeout(() => {
+                        clearParse();
+                        startAutoParse();
+                    }, 1000);
+                }
+            }
+        }, true); // 使用捕获阶段以最快速度拦截事件
 
         // 检测是否为剧集切换
         function isEpisodeSwitch(oldUrl, newUrl) {
