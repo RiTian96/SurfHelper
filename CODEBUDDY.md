@@ -335,3 +335,155 @@ if (window.top !== window.self) return; // 避免在 iframe 中重复执行
 ### 兼容性处理
 - 使用 `document.readyState` 检测页面加载状态
 - 为动态加载内容使用 MutationObserver
+
+### SPA 路由变化监听
+```javascript
+// 监听 popstate 事件处理 SPA 路由变化
+window.addEventListener('popstate', () => {
+    // 路由变化后重新初始化或清理状态
+    setTimeout(() => initComponents(), 100);
+});
+```
+
+### 域名动态获取与适配
+```javascript
+// 动态获取当前域名，支持多域名站点
+function getBaseUrl() {
+    return window.location.origin;
+}
+
+// 或针对特定格式（如 javdb*.com）
+function getJavdbBaseUrl() {
+    const host = window.location.host; // e.g., javdb571.com
+    return `https://${host}`;
+}
+```
+
+### MutationObserver 范围优化
+```javascript
+// 缩小观察范围，提升性能
+const targetNode = document.querySelector('.movie-list'); // 精确目标容器
+if (targetNode) {
+    const observer = new MutationObserver((mutations) => {
+        // 处理变化
+    });
+    observer.observe(targetNode, { childList: true, subtree: true });
+}
+```
+
+### 错误隔离包装器
+```javascript
+// 同步错误隔离：单项异常不影响整体
+function safeExecute(fn, context = '', defaultValue = null) {
+    try {
+        return fn();
+    } catch (error) {
+        console.error(`[Script] ${context} 出错:`, error);
+        return defaultValue;
+    }
+}
+
+// 应用：批量处理时隔离每个项目的异常
+items.forEach(item => {
+    safeExecute(() => processItem(item), '处理项目');
+});
+```
+
+### iframe 浮动定位策略
+```javascript
+// fixed 定位漂浮，不依赖父容器
+function injectFloatingIframe(src, targetRect) {
+    const iframe = document.createElement('iframe');
+    iframe.src = src;
+    iframe.style.cssText = `
+        position: fixed;
+        top: ${targetRect.top}px;
+        left: ${targetRect.left}px;
+        width: ${targetRect.width}px;
+        height: ${targetRect.height}px;
+        z-index: 2147483647;
+        border: none;
+    `;
+    document.body.appendChild(iframe);
+    return iframe;
+}
+
+// 滚动/resize 时更新位置
+window.addEventListener('scroll', () => {
+    const rect = targetElement.getBoundingClientRect();
+    iframe.style.top = `${rect.top}px`;
+    iframe.style.left = `${rect.left}px`;
+});
+```
+
+### 双频守护进程
+```javascript
+// 前期高频快速稳定，后期低频持续监控
+function startGuardianProcess(callback) {
+    const startTime = Date.now();
+    const guardian = setInterval(() => {
+        callback();
+        
+        // 5秒后切换到低频模式
+        if (Date.now() - startTime > 5000) {
+            clearInterval(guardian);
+            setInterval(callback, 250); // 低频 250ms
+        }
+    }, 50); // 高频 50ms
+}
+```
+
+### 主动式换集检测
+```javascript
+// 监听用户点击行为，自动检测换集操作
+document.addEventListener('click', (event) => {
+    const anchor = event.target.closest('a');
+    if (anchor?.href?.includes('site.com/video/')) {
+        // 检测到换集，执行相应操作
+        setTimeout(() => refreshPlayer(), 500);
+    }
+}, true); // useCapture 确保提前拦截
+```
+
+### base 标签处理
+```javascript
+// 确保页面内链接在当前页打开
+const base = document.createElement('base');
+base.target = '_self';
+document.head.prepend(base);
+```
+
+### CSS 批量注入（可复用 style 标签）
+```javascript
+const STYLE_ID = 'script-inject-styles';
+
+function injectStyles(css) {
+    let style = document.getElementById(STYLE_ID);
+    if (!style) {
+        style = document.createElement('style');
+        style.id = STYLE_ID;
+        document.head.prepend(style);
+    }
+    style.textContent = css;
+}
+```
+
+### 玻璃拟态 UI 模式
+```javascript
+// Glassmorphism 核心 CSS
+GM_addStyle(`
+    .glass-modal {
+        background: rgba(28, 28, 32, 0.82);
+        backdrop-filter: blur(28px) saturate(180%);
+        -webkit-backdrop-filter: blur(28px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 24px;
+        box-shadow: 0 32px 100px rgba(0,0,0,0.55), 
+                    0 0 0 1px rgba(255,255,255,0.08) inset;
+    }
+`);
+
+// 流畅动画曲线
+// cubic-bezier(0.16, 1, 0.3, 1) - 快速启动，平滑减速
+const SMOOTH_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
+```
