@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         VIP视频解析器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.5.5
-// @description  [核心] 多平台视频解析工具，集成15个解析接口；[优化] 统一解析入口，修复自动解析失效问题
+// @version      1.6.2
+// @description  [核心] 多平台VIP视频解析，支持腾讯/爱奇艺/优酷/B站/芒果TV，自动切换可用接口；[辅助] 接口评分排序、一键切换下一接口；[UI] 玻璃拟态风格
 // @author       RiTian96
 // @match        *://v.qq.com/*
 // @match        *://*.iqiyi.com/*
@@ -182,15 +182,18 @@
                 top: 20px;
                 right: 20px;
                 z-index: 999999;
-                background: #2a2d42;
-                border-radius: 8px;
+                background: rgba(0, 0, 0, 0.3);
+                backdrop-filter: blur(20px) saturate(180%);
+                -webkit-backdrop-filter: blur(20px) saturate(180%);
+                border-radius: 16px;
                 padding: 15px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                 width: 280px;
                 max-width: 280px;
-                border: 1px solid #3a3d5b;
+                border: 1px solid rgba(255, 255, 255, 0.15);
                 box-sizing: border-box;
+                transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
             }
 
             .video-parser-panel.minimized {
@@ -203,6 +206,11 @@
                 align-items: center;
                 justify-content: center;
                 cursor: pointer;
+            }
+
+            .video-parser-panel.minimized:hover {
+                transform: scale(1.05);
+                background: rgba(52, 55, 78, 0.9);
             }
 
             .video-parser-panel.minimized .panel-content {
@@ -223,6 +231,7 @@
                 align-items: center;
                 justify-content: center;
                 z-index: 10;
+                box-shadow: 0 2px 6px rgba(244, 67, 54, 0.4);
             }
 
             .video-parser-panel.minimized .parser-icon {
@@ -251,45 +260,53 @@
                 width: 100%;
                 padding: 8px 12px;
                 margin-bottom: 10px;
-                border: 1px solid #3a3d5b;
-                border-radius: 4px;
-                background: #1e1e2f;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
+                background: rgba(30, 30, 47, 0.8);
                 color: #dcdce4;
                 font-size: 14px;
                 outline: none;
-                transition: border-color 0.2s;
+                transition: all 0.2s;
             }
 
             .parser-select:focus {
                 border-color: #ff6768;
+                box-shadow: 0 0 0 3px rgba(255, 103, 104, 0.2);
             }
 
             .parser-button {
                 width: 100%;
                 padding: 10px;
-                background: #ff6768;
+                background: linear-gradient(135deg, #ff6768 0%, #ff5252 100%);
                 color: white;
                 border: none;
-                border-radius: 4px;
+                border-radius: 6px;
                 font-size: 14px;
                 font-weight: bold;
                 cursor: pointer;
-                transition: background 0.2s;
+                transition: all 0.2s;
+                box-shadow: 0 4px 12px rgba(255, 103, 104, 0.3);
             }
 
-            .parser-button:hover {
-                background: #e55a5b;
+            .parser-button:hover:not(:disabled) {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 16px rgba(255, 103, 104, 0.4);
+            }
+
+            .parser-button:active:not(:disabled) {
+                transform: translateY(0);
             }
 
             .parser-button:disabled {
                 background: #3a3d5b;
                 cursor: not-allowed;
+                box-shadow: none;
             }
 
             .parser-status {
                 margin-top: 10px;
                 padding: 8px;
-                border-radius: 4px;
+                border-radius: 6px;
                 font-size: 12px;
                 text-align: center;
                 display: none;
@@ -300,23 +317,29 @@
             }
 
             .parser-status.success {
-                background: #4caf50;
+                background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
                 color: white;
                 display: block;
             }
 
             .parser-status.error {
-                background: #f44336;
+                background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
                 color: white;
                 display: block;
             }
 
             .parser-status.loading {
-                background: #2196f3;
+                background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
                 color: white;
                 display: block;
                 position: relative;
                 overflow: hidden;
+                animation: status-pulse 1.5s ease-in-out infinite;
+            }
+
+            @keyframes status-pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.8; }
             }
 
             .parser-status.loading::after {
@@ -346,7 +369,7 @@
 
             .parser-progress-bar {
                 height: 100%;
-                background: #4caf50;
+                background: linear-gradient(90deg, #4caf50 0%, #8bc34a 100%);
                 border-radius: 2px;
                 width: 0%;
                 transition: width 0.3s ease;
@@ -356,7 +379,7 @@
                 margin-top: 8px;
                 padding: 6px;
                 background: rgba(255,255,255,0.05);
-                border-radius: 4px;
+                border-radius: 6px;
                 font-size: 11px;
                 color: #a0a0b8;
                 text-align: center;
@@ -374,6 +397,9 @@
             .parser-toggle input[type="checkbox"] {
                 margin-right: 8px;
                 cursor: pointer;
+                width: 16px;
+                height: 16px;
+                accent-color: #ff6768;
             }
 
             .parser-toggle label {
@@ -390,26 +416,34 @@
             .parser-action-btn {
                 flex: 1;
                 padding: 8px;
-                background: #3a3d5b;
+                background: rgba(58, 61, 91, 0.8);
                 color: #dcdce4;
-                border: none;
-                border-radius: 4px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
                 font-size: 12px;
                 cursor: pointer;
-                transition: background 0.2s;
+                transition: all 0.2s;
             }
 
             .parser-action-btn:hover {
-                background: #4a4d6b;
+                background: rgba(74, 77, 107, 0.9);
+                transform: translateY(-1px);
+            }
+
+            .parser-action-btn:active {
+                transform: translateY(0);
             }
 
             .parser-action-btn.next-btn {
-                background: #ff6768;
+                background: linear-gradient(135deg, #ff6768 0%, #ff5252 100%);
                 color: white;
+                border: none;
+                box-shadow: 0 2px 8px rgba(255, 103, 104, 0.3);
             }
 
             .parser-action-btn.next-btn:hover {
-                background: #e55a5b;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(255, 103, 104, 0.4);
             }
 
             .parser-score {
@@ -427,8 +461,8 @@
             }
 
             .vote-btn {
-                background: none;
-                border: 1px solid #3a3d5b;
+                background: rgba(58, 61, 91, 0.5);
+                border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: 4px;
                 padding: 4px 8px;
                 font-size: 12px;
@@ -440,16 +474,17 @@
             .vote-btn:hover {
                 border-color: #ff6768;
                 color: #ff6768;
+                transform: scale(1.05);
             }
 
             .vote-btn.liked {
-                background: #4caf50;
+                background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
                 border-color: #4caf50;
                 color: white;
             }
 
             .vote-btn.disliked {
-                background: #f44336;
+                background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
                 border-color: #f44336;
                 color: white;
             }
@@ -468,10 +503,12 @@
                 height: 20px;
                 line-height: 20px;
                 text-align: center;
+                transition: color 0.2s, transform 0.2s;
             }
 
             .close-button:hover {
                 color: #ff6768;
+                transform: scale(1.2);
             }
 
             .void-player-iframe {
@@ -487,6 +524,16 @@
             /* 防止iframe中的脚本影响主页面 */
             .void-player-iframe ~ .video-parser-panel {
                 display: none !important;
+            }
+
+            /* 移动端适配 */
+            @media (max-width: 480px) {
+                .video-parser-panel {
+                    width: calc(100vw - 20px);
+                    max-width: calc(100vw - 20px);
+                    right: 10px;
+                    left: 10px;
+                }
             }
         `;
         document.head.appendChild(style);

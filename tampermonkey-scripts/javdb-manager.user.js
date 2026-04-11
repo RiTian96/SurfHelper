@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      2.4.0
+// @version      2.4.1
 // @description  [核心] 影片自动屏蔽(看过/想看)与智能评分(高分绿边高亮/低分自动隐身)；[辅助] 搜索精确匹配黄金特效、详情页状态双向同步、悬浮大图预览、数据导入导出/自动爬取个人列表；支持日产/欧美/FC2番号
 // @author       RiTian96
 // @match        https://javdb.com/*
@@ -179,14 +179,14 @@
                 top: 20px;
                 right: 20px;
                 z-index: 10001;
-                background: rgba(28, 28, 30, 0.75);
+                background: rgba(0, 0, 0, 0.3);
                 color: #f5f5f7;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
                 backdrop-filter: blur(20px) saturate(180%);
                 -webkit-backdrop-filter: blur(20px) saturate(180%);
-                border: 1px solid rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.15);
                 border-radius: 16px;
-                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
                 transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
                 box-sizing: border-box;
             }
@@ -509,6 +509,7 @@
             .manager-button:hover {
                 transform: translateY(-2px);
                 filter: brightness(1.1);
+                box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
             }
             
             .manager-button:active {
