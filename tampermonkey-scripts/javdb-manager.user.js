@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavDB影片管理器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      2.3.0
+// @version      2.4.0
 // @description  [核心] 影片自动屏蔽(看过/想看)与智能评分(高分绿边高亮/低分自动隐身)；[辅助] 搜索精确匹配黄金特效、详情页状态双向同步、悬浮大图预览、数据导入导出/自动爬取个人列表；支持日产/欧美/FC2番号
 // @author       RiTian96
 // @match        https://javdb.com/*
@@ -299,6 +299,45 @@
             .manager-count strong {
                 color: #ffffff;
                 font-weight: 700;
+            }
+
+            /* === Toast 滑入动画 === */
+            .javdb-toast-slide-in {
+                animation: javdb-toast-slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            }
+            @keyframes javdb-toast-slide-up {
+                from {
+                    opacity: 0;
+                    transform: translateX(-50%) translateY(20px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateX(-50%) translateY(0);
+                }
+            }
+
+            /* === 移动端适配：面板位置 === */
+            @media (max-width: 480px) {
+                .javdb-manager-panel {
+                    right: 10px !important;
+                    left: 10px !important;
+                    top: 10px !important;
+                    width: auto !important;
+                    max-width: none !important;
+                }
+                .javdb-manager-panel.minimized {
+                    right: 10px !important;
+                    left: auto !important;
+                    top: 10px !important;
+                }
+                #javdb-magic-lens {
+                    max-width: 95vw !important;
+                }
+                #javdb-import-dialog {
+                    min-width: 90vw !important;
+                    left: 5vw !important;
+                    transform: translateY(-50%) !important;
+                }
             }
 
             /* --- 统计网格布局：撑满全宽 --- */
@@ -2773,11 +2812,12 @@
 
         const messageDiv = document.createElement('div');
         messageDiv.id = 'javdb-toast-message';
+        messageDiv.className = 'javdb-toast-slide-in';
         messageDiv.style.cssText = `
             position: fixed;
-            top: 50%;
+            bottom: 80px;
             left: 50%;
-            transform: translate(-50%, -50%);
+            transform: translateX(-50%);
             background: ${bgColor};
             color: white;
             padding: ${padding};
@@ -3121,6 +3161,16 @@
 
         document.body.appendChild(overlay);
         document.body.appendChild(dialog);
+
+        // ESC 键关闭对话框
+        const escHandler = (e) => {
+            if (e.key === 'Escape') {
+                overlay.remove();
+                dialog.remove();
+                document.removeEventListener('keydown', escHandler);
+            }
+        };
+        document.addEventListener('keydown', escHandler);
     }
 
     // 执行导入
