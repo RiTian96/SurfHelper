@@ -127,6 +127,15 @@
     ],
     "ce0fc951f353439f82ef2aa57eadeff6": [
       {
+        "expertId": "CodeReviewExpert",
+        "name": "Kim",
+        "profession": "代码审查专家",
+        "avatarUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/avatars/02-Engineering/CodeReviewExpert/CodeReviewExpert.png",
+        "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/02-Engineering/CodeReviewExpert/CodeReviewExpert_zh.md",
+        "usedAt": 1775917033080,
+        "industryId": "02-Engineering"
+      },
+      {
         "expertId": "GitWorkflowExpert",
         "name": "Ruby",
         "profession": "Git工作流专家",
@@ -143,17 +152,39 @@
         "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/02-Engineering/TechnicalDocumentationEngineer/TechnicalDocumentationEngineer_zh.md",
         "usedAt": 1775915503849,
         "industryId": "02-Engineering"
+      }
+    ],
+    "27413f3a6a414ed389e1c2cfefced97a": [
+      {
+        "expertId": "TechnicalDocumentationEngineer",
+        "name": "Anna",
+        "profession": "技术文档工程师",
+        "avatarUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/avatars/02-Engineering/TechnicalDocumentationEngineer/TechnicalDocumentationEngineer.png",
+        "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/02-Engineering/TechnicalDocumentationEngineer/TechnicalDocumentationEngineer_zh.md",
+        "usedAt": 1775971057297,
+        "industryId": "02-Engineering"
       },
+      {
+        "expertId": "SeniorDeveloper",
+        "name": "Will",
+        "profession": "高级开发工程师",
+        "avatarUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/avatars/02-Engineering/SeniorDeveloper/SeniorDeveloper.png",
+        "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/02-Engineering/SeniorDeveloper/SeniorDeveloper_zh.md",
+        "usedAt": 1775970068121,
+        "industryId": "02-Engineering"
+      }
+    ],
+    "ef73a7b152e74e2f8ded4091baecfd1e": [
       {
         "expertId": "CodeReviewExpert",
         "name": "Kim",
         "profession": "代码审查专家",
         "avatarUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/avatars/02-Engineering/CodeReviewExpert/CodeReviewExpert.png",
         "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/02-Engineering/CodeReviewExpert/CodeReviewExpert_zh.md",
-        "usedAt": 1775915140721,
+        "usedAt": 1775970681580,
         "industryId": "02-Engineering"
       }
     ]
   },
-  "lastUpdated": 1775916816108
+  "lastUpdated": 1775971101883
 }
