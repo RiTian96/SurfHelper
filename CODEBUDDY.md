@@ -39,7 +39,8 @@ SurfHelper/
 │   ├── *.user.js           # 脚本源文件（可被 Tampermonkey 直接安装）
 │   └── *.md                # 对应脚本的说明文档
 └── batch-scripts/          # Windows 批处理脚本目录
-    └── *.bat              # 批处理脚本文件
+    ├── *.bat               # 批处理脚本文件
+    └── *.md                # 对应脚本的说明文档
 ```
 
 ## 核心开发约定
@@ -486,4 +487,30 @@ GM_addStyle(`
 // 流畅动画曲线
 // cubic-bezier(0.16, 1, 0.3, 1) - 快速启动，平滑减速
 const SMOOTH_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
+```
+
+### BAT 批处理脚本模式
+
+**编码规范**：
+- 文件保存为 **UTF-8 无 BOM** + 脚本开头 `chcp 65001 >nul`
+- 子程序内注释用 `REM`，**不要用 `::`**（`::` 在括号块内会被误解析为标签）
+- **`::标签` 是注释不是 goto 目标**，有效标签用单冒号 `:标签`
+
+**循环与跳转**：
+- **`for` 循环内禁止使用 `goto`**，会直接跳出整个 for 循环导致脚本崩溃
+- **`for` 循环内禁止 `call` 子程序后由子程序内的 `goto` 跳回**，会破坏 for 迭代器状态
+- 需要循环+跳转时，改用以下方案：
+  - 文件迭代：硬编码逐个 `call :sub "file1"` / `call :sub "file2"` / `call :sub "file3"`
+  - 节点迭代：硬编码 `:try_p1` / `:try_p2` / `:try_p3` / `:try_p4`，用 goto 串联
+  - 或使用纯 `goto` 循环（`set /a "IDX+=1"` + `if !IDX! GEQ N goto done`）
+
+**进程管理**：
+- `start /b` 启动后台进程后，`taskkill /f /im curl.exe` 会杀掉**所有**同名进程
+- 优先用 curl 前台下载 + `--speed-limit` / `--speed-time` 自带卡顿检测，避免后台进程管理
+
+**curl 下载模板**：
+```bat
+curl -L -sS --connect-timeout 10 --max-time 120 --speed-limit 524288 --speed-time 4 -o "文件名" "URL"
+REM --speed-limit 524288  速度低于 512KB/s (0.5MB/s)
+REM --speed-time 4        持续 4 秒则自动中断
 ```
