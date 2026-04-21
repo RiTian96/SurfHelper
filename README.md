@@ -17,7 +17,7 @@ SurfHelper 是个人开发的小脚本集合，专注于提升网页浏览体验
 | **JavDB影片管理器** v2.4.1 | 影片自动屏蔽(看过/想看)与智能评分(高分绿边高亮/低分隐身)；搜索精确匹配黄金特效、详情页双向同步、悬浮大图预览、数据导入导出/一键爬取个人列表；支持日产/欧美/FC2番号；玻璃UI更通透，按钮动效增强 | [📖 文档](tampermonkey-scripts/javdb-manager.md) | [🔧 安装](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/javdb-manager.user.js) |
 | **VIP视频解析器** v1.6.6 | 腾讯/爱奇艺/优酷/B站/芒果TV多平台VIP解析，15个接口自动切换；fixed定位注入、换集检测、静音隐藏、接口评分 | [📖 文档](tampermonkey-scripts/vip-video-parser.md) | [🔧 安装](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/vip-video-parser.user.js) |
 | **微博磁链补全助手** v1.1.1 | 自动识别微博中的40位磁力哈希值，智能补全为可点击的磁力链接 | [📖 文档](tampermonkey-scripts/weibo-magnet-linker.md) | [🔧 安装](https://raw.githubusercontent.com/RiTian96/SurfHelper/main/tampermonkey-scripts/weibo-magnet-linker.user.js) |
-| **FongMi APK 更新** v2.0.0 | 4个优质节点智能切换(卡顿自动换节点)，一键获取最新版 FongMi TV/手机版 APK | [📖 文档](batch-scripts/fongmi-apk-updater.md) | [⬇️ 下载](batch-scripts/fongmi-apk-updater.bat) |
+| **FongMi APK 更新** v2.2.0 | 手动选择文件与节点，下载失败可换节点重试，一键获取最新版 FongMi TV/手机版 APK | [📖 文档](batch-scripts/fongmi-apk-updater.md) | [⬇️ 下载](batch-scripts/fongmi-apk-updater.bat) |
 
 ## 🐛 问题反馈
 - TG频道: https://t.me/SurfHelper_C
