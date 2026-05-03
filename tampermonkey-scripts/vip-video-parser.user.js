@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VIP视频解析器
 // @namespace    https://github.com/RiTian96/SurfHelper
-// @version      1.6.6
+// @version      1.6.7
 // @description  [核心] 腾讯/爱奇艺/优酷/B站/芒果TV多平台VIP解析，15个接口自动切换；[优化] fixed定位注入、换集检测、静音隐藏、接口评分
 // @author       RiTian96
 // @match        *://v.qq.com/*
@@ -64,7 +64,12 @@
 
     // 播放器容器选择器：按平台优先级排序
     const playerContainerSelectors = [
-        // 腾讯视频 - 最高优先级选择器
+        // 腾讯视频 - 最高优先级选择器（2026新版）
+        '#player-component',
+        '.container-player',
+        '#main-player',
+        '.txp_videos_container',
+        // 腾讯视频 - 旧版选择器（兼容）
         '#mod_player',
         '.txp_player',
         '.txp_video_container',
@@ -126,6 +131,8 @@
         '.txp_player_gift_overlay',
         '.txp_player_vip_tip',
         '.mod_copyright_tips',
+        '.thumbplayer-user-mod',
+        '#magicdanmaku-iframe-wrapper',
         // B站
         '.bpx-player-ending-overlay',
         '.bilibili-player-video-dash',
@@ -176,17 +183,24 @@
         // 针对各平台特殊处理
         const host = window.location.hostname;
 
-        // 腾讯视频的 txp-player - 强力暂停+隐藏
+        // 腾讯视频 - 强力暂停+隐藏（2026新版播放器）
         if (host.includes('qq.com')) {
-            // 1. 暂停并隐藏 txp-player 内的视频
-            document.querySelectorAll('.txp-player video, .txp_video_container video, [class*="txp_"] video').forEach(v => {
+            // 1. 暂停并隐藏所有 video 元素
+            document.querySelectorAll('.txp_videos_container video, .container-player video, #player-component video, [class*="txp_"] video').forEach(v => {
                 try {
                     v.muted = true;
                     if (!v.paused) v.pause();
                     v.style.opacity = '0';
                 } catch(e) {}
             });
-            // 2. 尝试调用腾讯播放器API暂停
+            // 2. 隐藏新版覆盖层（防止遮挡iframe）
+            document.querySelectorAll('.thumbplayer-user-mod, .plugin_ctrl_txp_shadow, #magicdanmaku-iframe-wrapper').forEach(el => {
+                try {
+                    el.style.display = 'none';
+                    el.style.pointerEvents = 'none';
+                } catch(e) {}
+            });
+            // 3. 尝试调用腾讯播放器API暂停
             try {
                 if (window.tvp && window.tvp.player) {
                     window.tvp.player.pause && window.tvp.player.pause();
@@ -194,7 +208,6 @@
                 // 尝试查找txp实例并暂停
                 const txpPlayer = document.querySelector('.txp-player');
                 if (txpPlayer) {
-                    // 发送暂停事件
                     const pauseEvent = new Event('txp_pause', { bubbles: true });
                     txpPlayer.dispatchEvent(pauseEvent);
                 }
@@ -1106,6 +1119,8 @@
             '.txp_center_controls', '.txp-layer-above-control', '.txp-layer-dynamic-above-control--on',
             '.txp_btn_play', '.txp_btn', '.txp_popup-active', '.txp_popup_content', '.mod_player_vip_ads',
             '.playlist-overlay-minipay',
+            // 腾讯视频（2026新版覆盖层）
+            '.thumbplayer-user-mod', '#magicdanmaku-iframe-wrapper',
             '.browser-ver-tip', '.videopcg-browser-tips', '.qy-player-browser-tip', '.iqp-browser-tip',
             '.m-pc-down', '.m-pc-client', '.qy-dialog-container', '.iqp-client-guide', '.qy-dialog-wrap',
             '[class*="shapedPopup_container"]', '[class*="notSupportedDrm_drmTipsPopBox"]',
@@ -1194,6 +1209,8 @@
                 '.txp_center_controls', '.txp-layer-above-control', '.txp-layer-dynamic-above-control--on',
                 '.txp_btn_play', '.txp_btn', '.txp_popup-active', '.txp_popup_content', '.mod_player_vip_ads',
                 '.playlist-overlay-minipay',
+                // 腾讯视频（2026新版覆盖层）
+                '.thumbplayer-user-mod', '#magicdanmaku-iframe-wrapper',
                 // 通用弹窗
                 '.browser-ver-tip', '.videopcg-browser-tips', '.qy-player-browser-tip', '.iqp-browser-tip',
                 '.m-pc-down', '.m-pc-client', '.qy-dialog-container', '.iqp-client-guide', '.qy-dialog-wrap',
@@ -1206,16 +1223,28 @@
             });
 
             // 3. 寻找注入目标容器
-            let targetRef = document.querySelector('#mod_player') ||
+            let targetRef = document.querySelector('#player-component') ||
+                document.querySelector('.container-player') ||
+                document.querySelector('#main-player') ||
+                document.querySelector('.txp_videos_container') ||
+                document.querySelector('#mod_player') ||
                 document.querySelector('.txp_player') ||
                 document.querySelector('.txp_video_container');
 
             if (!targetRef) {
                 // 备选选择器列表
                 const searchList = [
+                    // 腾讯视频（2026新版）
+                    '#player-component', '.container-player', '#main-player', '.txp_videos_container',
+                    // 芒果TV
                     '#m-player-video-container', '.mgtv-video-container', '.mgtv-player-container', '.mgtv-player-wrap', '#mgtv-player', '.mgtv-player', '.mango-layer', '.mgtv-player-ad',
                     '.mgtv-player-layers-container', '.mgtv-player-video-area', '.mgtv-player-video-box', '.mgtv-player-video-content',
-                    '.iqp-player', '#flashbox', '.txp_player_video_wrap', '#bilibili-player', '.player-wrap', '#player-container', '#player', '.player-container', '.player-view', '.video-wrapper', 'video'
+                    // 爱奇艺
+                    '.iqp-player', '#flashbox',
+                    // 腾讯视频（旧版）
+                    '.txp_player_video_wrap',
+                    // B站
+                    '#bilibili-player', '.player-wrap', '#player-container', '#player', '.player-container', '.player-view', '.video-wrapper', 'video'
                 ];
                 for (let s of searchList) {
                     const el = document.querySelector(s);
