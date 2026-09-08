@@ -21,6 +21,16 @@
   - 因此评分选择器要用条目内 `span[class^="rating"]`（不限层级），分页步长按本页实际条数自适应
 - IMDb 只能从条目页 `#info` 正则 `(tt\d{5,10})` 获取，移动端 rexxar 接口无此字段
 - **豆瓣安全校验页返回 HTTP 200**，但正文仅约 3KB 且 `<title>` 为纯「豆瓣」——判据需包含此项，否则会误判为「该片无 IMDb」
+- **Trakt 导入入口**：`https://app.trakt.tv/settings/data?mode=media&source=trakt-json`（不是 trakt.tv/apps/import）
+- 匹配域名：`movie.douban.com` + `www.douban.com` + `douban.com`（数据始终从 movie 子站读，cookie 是 `.douban.com` 共享）
+
+### 油猴 UI 统一约定（跨脚本，2026-09-08 确立）
+- 面板入口统一在**右上角** `top:20px; right:20px`，收起态为 54px 玻璃圆球（`border-radius:27px`），点击展开 / `×` 或 Esc 收起
+- 玻璃拟态参数：`backdrop-filter: blur(20px) saturate(180%)`、`border:1px solid rgba(255,255,255,.15)`、展开态 `border-radius:16px`、字体 `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto`
+- 按钮色板（Apple 系统色）：主操作绿 `#41bd55→#2e9e46`、暂停橙 `#ff9f0a→#ff9500`、继续蓝 `#0a84ff→#0071e3`、危险红 `#ff453a→#ff3b30`、聚焦环 `rgba(10,132,255,.6)`
+- ⚠️ **浅色站点**（如豆瓣）面板底色要更深（`rgba(20,20,25,.88)`）而非 javdb 的 `rgba(0,0,0,.3)`，否则白字看不清
+- 关闭按钮 28px 圆形 hover 转 90° 变红；**收起态下必须 `display:none`**，否则压住圆球图标
+
 ### 油猴脚本抓网页的通用约定（2026-09-07 血泪结论）
 - **一律用 `GM_xmlhttpRequest`，不要用页面 `fetch`**。页面 fetch 在 Tampermonkey 沙箱里常直接抛 `Failed to fetch`，拿不到响应对象，无法诊断；GM 不受 CORS 限制、自动带 Cookie、能给出 `res.finalUrl`
 - 元数据必须声明 `@grant GM_xmlhttpRequest` 且加 `@connect <目标域名>`，否则请求会失败或弹授权
