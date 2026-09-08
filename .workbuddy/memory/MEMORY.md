@@ -12,6 +12,24 @@
 - 存储: 使用 GM API (GM_getValue/GM_setValue) 存储数据
 - 配置: 统一使用 GM API (2026-04-11 优化后)
 
+### 豆瓣导出Trakt脚本 (2026-09-07 新增，当前 v1.1.0)
+- 文件: `tampermonkey-scripts/douban-trakt-exporter.user.js`
+- 豆瓣列表页类型过滤参数: `type=movie` / `type=tv`（不是 subtype）；剧集与电影同一域名
+- **豆瓣有两种浏览模式，解析器必须都兼容**：
+  - 列表模式 `mode=list`：`ul.list-view > li.item`，30 条/页，评分在 `.date` **内部**
+  - 网格模式（默认无参数）：`div.grid-view > div.item`，**15 条/页**，评分是 `.date` 的**兄弟节点**
+  - 因此评分选择器要用条目内 `span[class^="rating"]`（不限层级），分页步长按本页实际条数自适应
+- IMDb 只能从条目页 `#info` 正则 `(tt\d{5,10})` 获取，移动端 rexxar 接口无此字段
+- **豆瓣安全校验页返回 HTTP 200**，但正文仅约 3KB 且 `<title>` 为纯「豆瓣」——判据需包含此项，否则会误判为「该片无 IMDb」
+### 油猴脚本抓网页的通用约定（2026-09-07 血泪结论）
+- **一律用 `GM_xmlhttpRequest`，不要用页面 `fetch`**。页面 fetch 在 Tampermonkey 沙箱里常直接抛 `Failed to fetch`，拿不到响应对象，无法诊断；GM 不受 CORS 限制、自动带 Cookie、能给出 `res.finalUrl`
+- 元数据必须声明 `@grant GM_xmlhttpRequest` 且加 `@connect <目标域名>`，否则请求会失败或弹授权
+- 用 `res.finalUrl` 判跳转去向：含 `sec.douban.com` = 安全校验；含 `accounts.douban.com` = 登录态失效
+- 页面 fetch 仅作 GM 不可用时的兜底
+
+- **抓豆瓣页面时 `fetch` 必须设 `redirect: 'manual'`**：拦截是 302 到 `sec.douban.com`，默认 follow 会在跨源后因缺 CORS 头直接抛 `Failed to fetch`，拿不到 response 就无法识别为安全验证。manual 模式下用 `res.type === 'opaqueredirect' || res.status === 0` 判定
+- 详细实测结论见 `.workbuddy/memory/2026-09-07.md`
+
 ### 用户偏好
 - 用户希望保持代码稳定，不希望未确认的改动
 - 每次优化前会确认不影响功能再提交
