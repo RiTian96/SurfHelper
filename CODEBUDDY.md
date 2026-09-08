@@ -150,6 +150,7 @@ SurfHelper/
 - [ ] 调试模式默认为关闭状态
 - [ ] 没有硬编码的敏感信息
 - [ ] 样式注入使用 `GM_addStyle` 或动态创建 style 标签
+- [ ] 用到的 GM API 都在 `@grant` 中声明；发请求的域名都在 `@connect` 中声明
 
 ## 代码模式
 
@@ -188,6 +189,60 @@ XMLHttpRequest.prototype.send = function(body) {
     return originalSend.apply(this, arguments);
 };
 ```
+
+### 抓取页面 HTML（优先 GM_xmlhttpRequest）
+
+批量遍历页面抓数据时，**不要用页面里的 `fetch`**。在油猴沙箱中它常常直接抛
+`TypeError: Failed to fetch`，连响应对象都拿不到，导致无法区分「网络抖动 / 被反爬拦截 /
+登录态失效」三种情况，只能当成普通错误，容易静默丢掉整批数据。
+
+用 `GM_xmlhttpRequest`：不受 CORS 限制、由油猴托管 Cookie，且会跟随重定向并通过
+`res.finalUrl` 暴露最终地址 —— 这是判断被送去安全校验页还是登录页的唯一可靠依据。
+
+```javascript
+// 元数据必须声明，缺一不可
+// @grant        GM_xmlhttpRequest
+// @connect      movie.douban.com     // 目标域名，否则请求直接失败
+
+function gmRequest(url) {
+    return new Promise((resolve, reject) => {
+        if (typeof GM_xmlhttpRequest !== 'function') {
+            reject(new Error('GM_xmlhttpRequest 不可用'));
+            return;
+        }
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: url,
+            responseType: 'text',
+            timeout: 30000,
+            headers: { 'Accept': 'text/html,application/xhtml+xml' },
+            onload: resolve,
+            onerror: (e) => reject(new Error((e && e.error) || '请求失败')),
+            ontimeout: () => reject(new Error('请求超时'))
+        });
+    });
+}
+```
+
+**反爬拦截判据（务必覆盖 HTTP 200 的情况）**。很多站点（如豆瓣）的安全校验页返回的是
+**200 + 极短正文**，只查 403/429 抓不到，会把「被拦截」误判成「该页无数据」，污染结果集：
+
+```javascript
+function isBlocked(res, html) {
+    if (res.status === 403 || res.status === 429) return true;
+    const u = res.finalUrl || res.url || '';
+    if (u.indexOf('sec.douban.com') !== -1) return true;   // 安全校验
+    if (u.indexOf('accounts.douban.com') !== -1) return true; // 登录态失效
+    const head = (html || '').slice(0, 6000);
+    if (/请完成安全验证|检测到有异常请求|异常请求来自/.test(head)) return true;
+    // 校验中间页：HTTP 200，正文仅约 3KB（正常页 30KB 以上）
+    if ((html || '').length < 10000 && /<title>\s*豆瓣\s*<\/title>/.test(head)) return true;
+    return false;
+}
+```
+
+配套做法：请求失败只重试、不放弃整个批次；连续异常时自动降速；被拦截则暂停任务并在日志里
+给出可点击链接，让用户手动过验证后点「继续」。
 
 ### DOM 动态监听
 
@@ -487,6 +542,51 @@ GM_addStyle(`
 // 流畅动画曲线
 // cubic-bezier(0.16, 1, 0.3, 1) - 快速启动，平滑减速
 const SMOOTH_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
+```
+
+**浅色站点的适配**：上述深色玻璃（`rgba(28,28,32,.82)`）压在浅色页面上会让白字看不清。
+遇到白底站点（如豆瓣）时把不透明度提高到 `rgba(20,20,25,.88)`，其余参数保持不变。
+
+### 用户身份自动识别
+
+需要用户 ID 时先自动探测，不要一上来就让用户手填。按可靠性逐级兜底：
+
+```javascript
+function detectUid() {
+    // ① 当前网址：/people/202745100/
+    const fromUrl = uidFromHref(location.pathname);
+    if (fromUrl) return fromUrl;
+
+    // ② 站内顶栏/侧栏里指向「我的主页」的链接（多给几个选择器，逐站改版不会全失效）
+    const NAV_SELECTORS = [
+        '.top-nav-info a[href*="/people/"]',
+        '.nav-user-account a[href*="/people/"]',
+        '#db-global-nav a[href*="/people/"]',
+        'header a[href*="/people/"]'
+    ];
+    for (const sel of NAV_SELECTORS) {
+        const a = safeExecute(() => document.querySelector(sel), sel, null);
+        const id = uidFromHref(a ? a.getAttribute('href') : '');
+        if (id) return id;
+    }
+
+    // ③ 兜底：只认导航区域内的数字型 ID，避免抓到页面上别人的主页链接
+    // ④ 最后用上次存过的值（GM 存储）
+    return getCachedValue(STORAGE_KEY.UID, '');
+}
+```
+
+关键点：兜底必须限定在导航区域内，否则浏览别人主页时会把对方 ID 当成自己的。
+
+### 多子域名覆盖
+
+同一站点有多个子域时，写多条 `@match`，脚本在任意子域都能出现；数据仍从固定的数据子域读取
+（登录 Cookie 通常是父域共享的，不受影响）：
+
+```javascript
+// @match        *://movie.douban.com/*    // 数据子域
+// @match        *://www.douban.com/*      // 主站，仅为让入口出现
+// @match        *://douban.com/*
 ```
 
 ### BAT 批处理脚本模式
